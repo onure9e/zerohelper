@@ -18,12 +18,12 @@
   "author": "Onure9e",
   "license": "ISC",
   "dependencies": {
+    "dotenv": "^16.4.7",
     "fs": "^0.0.1-security",
     "lodash": "^4.17.21",
     "mongodb": "^6.12.0",
     "path": "^0.12.7",
     "promise-mysql": "^5.2.0"
   },
-  "devDependencies": {},
   "description": ""
 }
