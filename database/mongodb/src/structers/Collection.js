@@ -90,7 +90,7 @@ class Collection {
      * @param {Number} value
      * @return {mongodb.UpdateWriteOpResult}
      */
-    async subtract(path, value) {
+    async sub(path, value) {
         path = PathFormat(path);
 
         return await this.Collection.updateMany({}, { $inc: { [path]: -Math.abs(value) } }, { upsert: true });

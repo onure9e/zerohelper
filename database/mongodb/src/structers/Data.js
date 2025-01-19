@@ -146,7 +146,7 @@ class Data {
      * @param {Number} value
      * @return {any}
      */
-    async subtract(path, value) {
+    async sub(path, value) {
         path = PathFormat(path);
 
         const data = await this.#collection.findOneAndUpdate({ key: this.#key }, { $inc: { [path]: -Math.abs(value) } }, {
