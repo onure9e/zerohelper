@@ -76,15 +76,15 @@ db.has('foo') // returns true or false
             console.log('Database Connected');
         });
 
-        db.set('foo','bar') // sets foo to bar
-        db.push('array','x') // pushs x to array
-        db.delete('foo') // deletes foo
+        db.set('table','foo','bar') // sets foo to bar
+        db.push('table','array','x') // pushs x to array
+        db.delete('table','foo') // deletes foo
 
-        db.add('number',1) // adds 1 to number
-        db.sub('number',1) // subtracts 1 from number
+        db.add('table','number',1) // adds 1 to number
+        db.sub('table','number',1) // subtracts 1 from number
 
-        db.get('foo') // gets foo value
-        db.has('foo') // returns true or false
+        db.get('table','foo') // gets foo value
+        db.has('table','foo') // returns true or false
 
         db.ping() // returns database ping
 })()
