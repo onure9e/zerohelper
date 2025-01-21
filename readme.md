@@ -10,6 +10,8 @@ npm i @onurege3467/zerohelper
 var {functions} = require('@onurege3467/zerohelper')
 
 console.log(functions.makeUniqueId()) // returns like this m63ku5dsi45hppk24i
+console.log(functions.uid.uuid()) // returns a uuid like 280fbb78-913a-4694-9b7b-f44eb74deb28
+console.log(functions.uid.isUUID('some text')) // returns true or false
 console.log(functions.randomArray([1,2,3,4,5])) // selects random variable in this array
 console.log(functions.randomEmoji()) // returns a random emoji
 console.log(functions.randomHex()) // returns a random hex code
