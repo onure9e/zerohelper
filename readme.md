@@ -18,6 +18,7 @@ console.log(functions.randomHex()) // returns a random hex code
 console.log(functions.randomNumber()) // returns random number
 console.log(functions.randomText()) // returns random text
 console.log(functions.shuffleArray([1,2,3,4,5,6,7,8,9,0])) // returns shuffled array like [3,5,2,1,7,6,8,9,0]
+console.log(functions.titleCase("HellO tHis iS DEMO teXt")) // returns Hello This Is Demo Text
 ```
 ## Using ZeroHelper As Database
 ZeroHelper's database is divided into 3 parts.

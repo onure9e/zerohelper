@@ -77,6 +77,13 @@ function shuffleArray(array) {
   }
   return array;
 }
+function titleCase(sentence) {
+  return sentence
+      .toLowerCase() 
+      .split(" ") 
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1)) 
+      .join(" "); 
+}
 module.exports = {
   makeUniqueId,
   randomArray,
@@ -88,5 +95,6 @@ module.exports = {
     uuid,
     isUUID,
   },
-  shuffleArray
+  shuffleArray,
+  titleCase
 };
