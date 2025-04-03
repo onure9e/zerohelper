@@ -6,28 +6,43 @@ class Database {
   constructor(dbFilePath) {
     this.dbFilePath = dbFilePath || path.join(__dirname, "database.sqlite");
     this.db = null;
+
+    // Veritabanı hazır olana kadar işlemleri bekletmek için bir Promise
+    this.ready = new Promise((resolve, reject) => {
+      if (!fs.existsSync(this.dbFilePath)) {
+        console.log("Database file does not exist. Creating the file...");
+        fs.writeFileSync(this.dbFilePath, ""); // Boş bir dosya oluştur
+      }
+
+      // Veritabanını başlat
+      this.db = new sqlite3.Database(this.dbFilePath, (err) => {
+        if (err) {
+          console.error("Error opening database:", err.message);
+          reject(err);
+        } else {
+          console.log("Connected to the SQLite database.");
+          this.runQuery(
+            `CREATE TABLE IF NOT EXISTS key_value_store (key TEXT PRIMARY KEY, value TEXT)`
+          )
+            .then(() => {
+              console.log("Table initialized");
+              resolve(); // Veritabanı hazır
+            })
+            .catch((err) => {
+              console.error(err);
+              reject(err);
+            });
+        }
+      });
+    });
   }
 
-  initialize() {
-    if (!fs.existsSync(this.dbFilePath)) {
-      console.log("Creating database file...");
-      fs.writeFileSync(this.dbFilePath, "");
+  _ensureDatabaseInitialized() {
+    if (!this.db) {
+      throw new Error(
+        "Database is not initialized. Ensure the database file exists."
+      );
     }
-
-    this.db = new sqlite3.Database(this.dbFilePath, (err) => {
-      if (err) {
-        console.error("Error opening database:", err.message);
-      } else {
-        console.log("Connected to the SQLite database.");
-        this.runQuery(
-          `CREATE TABLE IF NOT EXISTS key_value_store (key TEXT PRIMARY KEY, value TEXT)`
-        )
-          .then(() => {
-            console.log("Table initialized");
-          })
-          .catch((err) => console.error(err));
-      }
-    });
   }
 
   _parseNestedKey(key) {
@@ -50,7 +65,9 @@ class Database {
     return { ...target, ...source };
   }
 
-  set(key, value) {
+  async set(key, value) {
+    await this.ready; // Veritabanı hazır olana kadar bekle
+    this._ensureDatabaseInitialized();
     const keys = this._parseNestedKey(key);
     if (keys.length > 1) {
       return this.get(keys[0]).then((currentValue) => {
@@ -69,7 +86,9 @@ class Database {
     );
   }
 
-  get(key) {
+  async get(key) {
+    await this.ready; // Veritabanı hazır olana kadar bekle
+    this._ensureDatabaseInitialized();
     const keys = this._parseNestedKey(key);
     return this.getQuery(`SELECT value FROM key_value_store WHERE key = ?`, [
       keys[0],
@@ -82,7 +101,9 @@ class Database {
     });
   }
 
-  delete(key) {
+  async delete(key) {
+    await this.ready; // Veritabanı hazır olana kadar bekle
+    this._ensureDatabaseInitialized();
     const keys = this._parseNestedKey(key);
     if (keys.length > 1) {
       return this.get(keys[0]).then((currentValue) => {
@@ -102,11 +123,13 @@ class Database {
     return this.runQuery(`DELETE FROM key_value_store WHERE key = ?`, [key]);
   }
 
-  has(key) {
+  async has(key) {
+    await this.ready; // Veritabanı hazır olana kadar bekle
     return this.get(key).then((value) => value !== null);
   }
 
-  push(key, value) {
+  async push(key, value) {
+    await this.ready; // Veritabanı hazır olana kadar bekle
     return this.get(key).then((currentValue) => {
       if (!Array.isArray(currentValue)) {
         currentValue = [];
@@ -116,7 +139,8 @@ class Database {
     });
   }
 
-  add(key, value) {
+  async add(key, value) {
+    await this.ready; // Veritabanı hazır olana kadar bekle
     return this.get(key).then((currentValue) => {
       if (typeof currentValue !== "number") {
         currentValue = 0;
@@ -125,7 +149,8 @@ class Database {
     });
   }
 
-  sub(key, value) {
+  async sub(key, value) {
+    await this.ready; // Veritabanı hazır olana kadar bekle
     return this.get(key).then((currentValue) => {
       if (typeof currentValue !== "number") {
         currentValue = 0;
@@ -159,13 +184,15 @@ class Database {
   }
 
   close() {
-    this.db.close((err) => {
-      if (err) {
-        console.error("Error closing database:", err.message);
-      } else {
-        console.log("Database connection closed.");
-      }
-    });
+    if (this.db) {
+      this.db.close((err) => {
+        if (err) {
+          console.error("Error closing database:", err.message);
+        } else {
+          console.log("Database connection closed.");
+        }
+      });
+    }
   }
 }
 
@@ -173,7 +200,6 @@ module.exports = Database;
 
 // Example usage:
 // const db = new Database();
-// db.initialize();
 // db.set('foo.bar.baz', 'value')
 //   .then(() => db.get('foo.bar'))
 //   .then((value) => console.log('Value:', value)) // Output: { baz: 'value' }
