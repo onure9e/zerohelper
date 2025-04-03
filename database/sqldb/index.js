@@ -1,6 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const sqlite3 = require("sqlite3").verbose();
+
 class Database {
   constructor(dbFilePath) {
     this.dbFilePath = dbFilePath || path.join(__dirname, "database.sqlite");
@@ -29,7 +30,39 @@ class Database {
     });
   }
 
+  _parseNestedKey(key) {
+    return key.includes(".") ? key.split(".") : [key];
+  }
+
+  _buildNestedObject(keys, value) {
+    return keys.reverse().reduce((acc, curr) => ({ [curr]: acc }), value);
+  }
+
+  _mergeObjects(target, source) {
+    for (const key in source) {
+      if (source[key] instanceof Object && key in target) {
+        Object.assign(
+          source[key],
+          this._mergeObjects(target[key], source[key])
+        );
+      }
+    }
+    return { ...target, ...source };
+  }
+
   set(key, value) {
+    const keys = this._parseNestedKey(key);
+    if (keys.length > 1) {
+      return this.get(keys[0]).then((currentValue) => {
+        const nestedObject = this._buildNestedObject(keys.slice(1), value);
+        const mergedValue = this._mergeObjects(
+          currentValue || {},
+          nestedObject
+        );
+        return this.set(keys[0], mergedValue);
+      });
+    }
+
     return this.runQuery(
       `INSERT INTO key_value_store (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
       [key, JSON.stringify(value)]
@@ -37,19 +70,40 @@ class Database {
   }
 
   get(key) {
+    const keys = this._parseNestedKey(key);
     return this.getQuery(`SELECT value FROM key_value_store WHERE key = ?`, [
-      key,
-    ]).then((row) => (row ? JSON.parse(row.value) : null));
+      keys[0],
+    ]).then((row) => {
+      if (!row) return null;
+      const value = JSON.parse(row.value);
+      return keys.length > 1
+        ? keys.slice(1).reduce((acc, curr) => (acc ? acc[curr] : null), value)
+        : value;
+    });
   }
 
   delete(key) {
+    const keys = this._parseNestedKey(key);
+    if (keys.length > 1) {
+      return this.get(keys[0]).then((currentValue) => {
+        if (!currentValue) return null;
+        let ref = currentValue;
+        for (let i = 0; i < keys.length - 1; i++) {
+          if (!ref[keys[i]]) return null;
+          if (i === keys.length - 2) {
+            delete ref[keys[i + 1]];
+          } else {
+            ref = ref[keys[i]];
+          }
+        }
+        return this.set(keys[0], currentValue);
+      });
+    }
     return this.runQuery(`DELETE FROM key_value_store WHERE key = ?`, [key]);
   }
 
   has(key) {
-    return this.getQuery(`SELECT 1 FROM key_value_store WHERE key = ?`, [
-      key,
-    ]).then((row) => !!row);
+    return this.get(key).then((value) => value !== null);
   }
 
   push(key, value) {
@@ -120,22 +174,11 @@ module.exports = Database;
 // Example usage:
 // const db = new Database();
 // db.initialize();
-// db.set('foo', 'bar')
+// db.set('foo.bar.baz', 'value')
+//   .then(() => db.get('foo.bar'))
+//   .then((value) => console.log('Value:', value)) // Output: { baz: 'value' }
+//   .then(() => db.delete('foo.bar.baz'))
 //   .then(() => db.get('foo'))
-//   .then((value) => console.log('Value:', value)) // Output: bar
-//   .then(() => db.push('array', 'x'))
-//   .then(() => db.get('array'))
-//   .then((value) => console.log('Array:', value)) // Output: ['x']
-//   .then(() => db.add('number', 1))
-//   .then(() => db.get('number'))
-//   .then((value) => console.log('Number:', value)) // Output: 1
-//   .then(() => db.sub('number', 1))
-//   .then(() => db.get('number'))
-//   .then((value) => console.log('Number after sub:', value)) // Output: 0
-//   .then(() => db.has('foo'))
-//   .then((exists) => console.log('Exists:', exists)) // Output: true
-//   .then(() => db.delete('foo'))
-//   .then(() => db.has('foo'))
-//   .then((exists) => console.log('Exists after delete:', exists)) // Output: false
+//   .then((value) => console.log('After delete:', value)) // Output: {}
 //   .catch((err) => console.error(err))
 //   .finally(() => db.close());

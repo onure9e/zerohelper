@@ -44,8 +44,8 @@ const runSQLite = async () => {
   const { database } = require("../index");
   var db = new database.SQLiteDatabase();
   await db.initialize();
-  await db.set("foo", "bar");
-  console.log(await db.get("foo"));
+  await db.set("foo.test", "bar");
+  console.log(await db.get("foo.test"));
 };
 
 runSQLite();
