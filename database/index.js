@@ -1,9 +1,11 @@
-var jsonDatabasse = require('./jsondatabase/index')
-var MongoDB = require('./mongodb/index')
-var MySQL = require('./mysql/index')
+var JsonDatabase = require("./jsondatabase/index");
+var MongoDB = require("./mongodb/index");
+var MySQLDatabase = require("./mysql/index");
+var SQLiteDatabase = require("./sqldb/index");
 
 module.exports = {
-    JsonDatabase:  jsonDatabasse,
-    MongoDB,
-    MySQLDatabase:MySQL
-}
+  JsonDatabase,
+  MongoDB,
+  MySQLDatabase,
+  SQLiteDatabase,
+};

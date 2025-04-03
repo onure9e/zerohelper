@@ -1,6 +1,6 @@
 {
   "name": "@onurege3467/zerohelper",
-  "version": "1.5.0",
+  "version": "2.0.0",
   "main": "index.js",
   "scripts": {
     "test": "node test.js"
@@ -13,7 +13,10 @@
     "mongodb",
     "mysql",
     "db",
-    "jsondatabase"
+    "jsondatabase",
+    "sqlitedatabase",
+    "sqlite3",
+    "quick.db"
   ],
   "author": "Onure9e",
   "license": "ISC",
@@ -23,7 +26,8 @@
     "lodash": "^4.17.21",
     "mongodb": "^6.12.0",
     "path": "^0.12.7",
-    "promise-mysql": "^5.2.0"
+    "promise-mysql": "^5.2.0",
+    "sqlite3": "^5.1.7"
   },
   "description": ""
 }
