@@ -1,7 +1,6 @@
 const fs = require("fs");
 const path = require("path");
 const sqlite3 = require("sqlite3").verbose();
-var i = 0;
 class Database {
   constructor(dbFilePath) {
     this.dbFilePath = dbFilePath || path.join(__dirname, "database.sqlite");
@@ -83,10 +82,6 @@ class Database {
   }
 
   runQuery(query, params = []) {
-    if (!i) {
-      console.log("Database not initialized");
-      return Promise.reject(new Error("Database not initialized"));
-    }
     return new Promise((resolve, reject) => {
       this.db.run(query, params, function (err) {
         if (err) {
@@ -99,10 +94,6 @@ class Database {
   }
 
   getQuery(query, params = []) {
-    if (!i) {
-      console.log("Database not initialized");
-      return Promise.reject(new Error("Database not initialized"));
-    }
     return new Promise((resolve, reject) => {
       this.db.get(query, params, (err, row) => {
         if (err) {
