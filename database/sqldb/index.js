@@ -124,8 +124,13 @@ class Database {
   }
 
   async has(key) {
-    await this.ready; // Veritabanı hazır olana kadar bekle
-    return this.get(key).then((value) => value !== null);
+    await this.ready;
+    let result = undefined; // Veritabanı hazır olana kadar bekle
+    await this.get(key).then((value) => (result = value));
+    if (!result) return false;
+    else {
+      return true;
+    }
   }
 
   async push(key, value) {

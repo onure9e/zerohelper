@@ -43,8 +43,8 @@ const runJsonDatabase = async () => {
 const runSQLite = async () => {
   const { database } = require("../index");
   var db = new database.SQLiteDatabase();
-  await db.set("foo.test", "bar");
-  console.log(await db.get("foo.test"));
+  await db.set("foo.test2", { Date: Date.now(), name: "Onur" });
+  console.log(await db.has("foo.test2.a"));
 };
 
 runSQLite();
