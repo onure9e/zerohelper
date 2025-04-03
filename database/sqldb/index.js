@@ -23,7 +23,6 @@ class Database {
         )
           .then(() => {
             console.log("Table initialized");
-            i = 1;
           })
           .catch((err) => console.error(err));
       }
