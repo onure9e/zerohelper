@@ -6,6 +6,8 @@ var JsonDatabase = require("./jsondatabase/index");
 var MongoDB = require("./mongodb/index");
 var MySQLDatabase = require("./mysql/index");
 var SQLiteDatabase = require("./sqldb/index");
+var RedisDatabase = require("./redis/index");
+var PostgreSQL = require("./postgresql/index");
 
 module.exports = {
   /**
@@ -31,4 +33,16 @@ module.exports = {
    * @type {SQLiteDatabase}
    */
   SQLiteDatabase,
+
+  /**
+   * Redis-based database.
+   * @type {RedisDatabase}
+   */
+  RedisDatabase,
+
+  /**
+   * PostgreSQL-based database.
+   * @type {PostgreSQL}
+   */
+  PostgreSQL,
 };

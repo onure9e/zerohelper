@@ -1,6 +1,6 @@
 {
   "name": "@onurege3467/zerohelper",
-  "version": "2.1.2",
+  "version": "3.0.0",
   "main": "index.js",
   "scripts": {
     "test": "node test.js"
@@ -12,22 +12,29 @@
     "uuid",
     "mongodb",
     "mysql",
-    "db",
     "jsondatabase",
-    "sqlitedatabase",
     "sqlite3",
-    "quick.db"
+    "quick.db",
+    "postgresql",
+    "redis",
+    "utility",
+    "functions",
+    "nodejs"
   ],
   "author": "Onure9e",
   "license": "ISC",
+  "description": "ZeroHelper is a versatile JavaScript library offering helper functions and database utilities for developers. It supports MongoDB, MySQL, SQLite, Redis, and PostgreSQL.",
   "dependencies": {
-    "dotenv": "^16.4.7",
+    "bcrypt": "^5.1.1",
+    "crypto": "^1.0.1",
     "fs": "^0.0.1-security",
+    "jsonwebtoken": "^9.0.2",
     "lodash": "^4.17.21",
     "mongodb": "^6.12.0",
     "path": "^0.12.7",
+    "pg": "^8.14.1",
     "promise-mysql": "^5.2.0",
+    "redis": "^4.7.0",
     "sqlite3": "^5.1.7"
-  },
-  "description": ""
+  }
 }

@@ -1,12 +1,7 @@
 var database = require("./database/index");
-var functions = require("./functions/functions");
+var functions = require("./functions/index");
 
 module.exports = {
-  database: {
-    JsonDatabase: database.JsonDatabase,
-    MongoDB: database.MongoDB,
-    MySQLDatabase: database.MySQLDatabase,
-    SQLiteDatabase: database.SQLiteDatabase,
-  },
+  database,
   functions,
 };
