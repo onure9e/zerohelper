@@ -229,17 +229,56 @@ ZeroHelper provides multiple database utilities for seamless integration with va
     console.log("Database Connected");
   });
 
-  await db.set("table", "foo", "bar");
-  await db.push("table", "array", "x");
-  await db.delete("table", "foo");
+  await db.set("key", "value"); // Uses the default table
+  await db.set("key", "value", "custom_table"); // Uses the specified table
 
-  await db.add("table", "number", 1);
-  await db.sub("table", "number", 1);
+  const value = await db.get("key"); // Uses the default table
+  const valueInCustomTable = await db.get("key", "custom_table"); // Uses the specified table
 
-  console.log(await db.get("table", "foo"));
-  console.log(await db.has("table", "foo"));
+  await db.add("count", 10); // Uses the default table
+  await db.add("count", 10, "custom_table"); // Uses the specified table
 
-  console.log(await db.ping());
+  await db.sub("count", 5); // Uses the default table
+  await db.sub("count", 5, "custom_table"); // Uses the specified table
+
+  await db.push("array", "value"); // Uses the default table
+  await db.push("array", "value", "custom_table"); // Uses the specified table
+
+  await db.pull("array", "value"); // Uses the default table
+  await db.pull("array", "value", "custom_table"); // Uses the specified table
+
+  await db.delete("key"); // Uses the default table
+  await db.delete("key", "custom_table"); // Uses the specified table
+
+  const exists = await db.exists("key"); // Uses the default table
+  const existsInCustomTable = await db.exists("key", "custom_table"); // Uses the specified table
+
+  const includes = await db.includes("array", "value"); // Uses the default table
+  const includesInCustomTable = await db.includes(
+    "array",
+    "value",
+    "custom_table"
+  ); // Uses the specified table
+
+  const allData = await db.all(); // Uses the default table
+  const allDataInCustomTable = await db.all("custom_table"); // Uses the specified table
+
+  await db.clear(); // Clears the default table
+  await db.clear("custom_table"); // Clears the specified table
+
+  await db.drop(); // Drops the default table
+  await db.drop("custom_table"); // Drops the specified table
+
+  await db.rename("old_table", "new_table");
+
+  const ping = await db.ping();
+  console.log(`Ping: ${ping}ms`);
+
+  // Sets MySQL global variables
+  await db.variables({
+    max_connections: 100000,
+    wait_timeout: 60,
+  });
 })();
 ```
 
