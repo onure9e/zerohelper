@@ -363,3 +363,104 @@ ZeroHelper provides multiple database utilities for seamless integration with va
   await db.close();
 })();
 ```
+
+## Database Migration
+
+The `migrateData` function allows you to migrate data between different types of databases. It supports JSON, MongoDB, MySQL, SQLite, Redis, and PostgreSQL.
+
+# Example: Migrate Data from JSON to MongoDB
+
+```js
+const migrateData = require("@onurege3467/zerohelper/database/migrate");
+
+const sourceConfig = {
+  type: "json",
+  options: {
+    filePath: "databases/source.json", // Path to the JSON file
+  },
+};
+
+const targetConfig = {
+  type: "mongodb",
+  options: {
+    url: "mongodb://localhost:27017", // MongoDB connection URL
+    database: "targetDatabase", // Target database name
+    collection: "targetCollection", // Target collection name
+  },
+};
+
+(async () => {
+  try {
+    await migrateData(sourceConfig, targetConfig);
+    console.log("Data migration completed successfully!");
+  } catch (error) {
+    console.error("Error during migration:", error);
+  }
+})();
+```
+
+# Supported Database Types and Options
+
+```json
+{
+  "type": "json",
+  "options": {
+    "filePath": "path/to/json/file.json"
+  }
+}
+```
+
+```json
+{
+  "type": "mongodb",
+  "options": {
+    "url": "mongodb://localhost:27017",
+    "database": "databaseName",
+    "collection": "collectionName"
+  }
+}
+```
+
+```json
+{
+  "type": "mysql",
+  "options": {
+    "host": "localhost:port",
+    "user": "username",
+    "password": "password",
+    "database": "databaseName"
+  }
+}
+```
+
+```json
+{
+  "type": "sqlite",
+  "options": {
+    "filePath": "path/to/sqlite/file.db"
+  }
+}
+```
+
+```json
+{
+  "type": "redis",
+  "options": {
+    "host": "127.0.0.1",
+    "port": 6379
+  }
+}
+```
+
+```json
+{
+  "type": "postgresql",
+  "options": {
+    "host": "localhost",
+    "user": "username",
+    "password": "password",
+    "database": "databaseName",
+    "port": 5432
+  }
+}
+```

@@ -84,7 +84,30 @@ class RedisDatabase {
     currentValue.push(value);
     await this.set(key, currentValue);
   }
+  async getAllData() {
+    try {
+      const keys = await this.client.keys("*"); // Tüm anahtarları al
+      const result = {};
 
+      for (const key of keys) {
+        let value = await this.client.get(key);
+
+        // JSON parse işlemi
+        try {
+          value = JSON.parse(value);
+        } catch (e) {
+          // JSON değilse olduğu gibi bırak
+        }
+
+        result[key] = value;
+      }
+
+      return result;
+    } catch (error) {
+      console.error("Error fetching all data:", error);
+      throw error;
+    }
+  }
   async ping() {
     try {
       const pong = await this.client.ping();

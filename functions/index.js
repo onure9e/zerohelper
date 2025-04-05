@@ -234,9 +234,146 @@ function isPrime(num) {
   }
   return true;
 }
+// Tarih ve Saat İşlemleri
+function formatDate(date, format = "YYYY-MM-DD") {
+  const options = {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  };
+  const formattedDate = new Intl.DateTimeFormat("en-US", options).format(date);
+  const [month, day, year, hour, minute, second] = formattedDate.match(/\d+/g);
 
+  return format
+    .replace("YYYY", year)
+    .replace("MM", month)
+    .replace("DD", day)
+    .replace("HH", hour)
+    .replace("mm", minute)
+    .replace("ss", second);
+}
+
+function dateDifference(date1, date2) {
+  const diffTime = Math.abs(date2 - date1);
+  return Math.ceil(diffTime / (1000 * 60 * 60 * 24)); // Gün cinsinden fark
+}
+
+function addDays(date, days) {
+  const result = new Date(date);
+  result.setDate(result.getDate() + days);
+  return result;
+}
+
+function subtractDays(date, days) {
+  const result = new Date(date);
+  result.setDate(result.getDate() - days);
+  return result;
+}
+
+function combination(n, r) {
+  return factorial(n) / (factorial(r) * factorial(n - r));
+}
+
+function permutation(n, r) {
+  return factorial(n) / factorial(n - r);
+}
+const https = require("https");
+const http = require("http");
+
+function fetchData(url) {
+  return new Promise((resolve, reject) => {
+    const client = url.startsWith("https") ? https : http;
+
+    client
+      .get(url, (response) => {
+        let data = "";
+
+        // Gelen veriyi parça parça topluyoruz
+        response.on("data", (chunk) => {
+          data += chunk;
+        });
+
+        // Veri tamamen alındığında çözümleme yapıyoruz
+        response.on("end", () => {
+          try {
+            resolve(JSON.parse(data));
+          } catch (error) {
+            resolve(data); // JSON değilse düz metin döndür
+          }
+        });
+      })
+      .on("error", (error) => {
+        reject(error);
+      });
+  });
+}
+
+function postData(url, data) {
+  return new Promise((resolve, reject) => {
+    const client = url.startsWith("https") ? https : http;
+    const parsedUrl = new URL(url);
+
+    const options = {
+      hostname: parsedUrl.hostname,
+      port: parsedUrl.port || (url.startsWith("https") ? 443 : 80),
+      path: parsedUrl.pathname,
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Content-Length": Buffer.byteLength(JSON.stringify(data)),
+      },
+    };
+
+    const req = client.request(options, (response) => {
+      let responseData = "";
+
+      response.on("data", (chunk) => {
+        responseData += chunk;
+      });
+
+      response.on("end", () => {
+        try {
+          resolve(JSON.parse(responseData));
+        } catch (error) {
+          resolve(responseData); // JSON değilse düz metin döndür
+        }
+      });
+    });
+
+    req.on("error", (error) => {
+      reject(error);
+    });
+
+    // Gönderilecek veriyi yazıyoruz
+    req.write(JSON.stringify(data));
+    req.end();
+  });
+}
+
+function generateSlug(text) {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+function wordCount(text) {
+  return text.trim().split(/\s+/).length;
+}
 // Exportlar
 module.exports = {
+  http: {
+    fetchData,
+    postData,
+  },
+  date: {
+    formatDate,
+    dateDifference,
+    addDays,
+    subtractDays,
+  },
   random: {
     makeUniqueId,
     randomArray,
@@ -249,6 +386,8 @@ module.exports = {
   string: {
     titleCase,
     generateRandomString,
+    generateSlug,
+    wordCount,
   },
   array: {
     shuffleArray,
@@ -283,5 +422,7 @@ module.exports = {
     min,
     range,
     isPrime,
+    combination,
+    permutation,
   },
 };

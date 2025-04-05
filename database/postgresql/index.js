@@ -3,6 +3,25 @@ const { Pool } = require("pg");
 class PostgreSQL {
   constructor(config) {
     this.pool = new Pool(config);
+
+    // Ensure the table exists when the class is instantiated
+    this.ensureTableExists(config).catch((error) => {
+      console.error("Error ensuring table exists:", error);
+    });
+  }
+
+  async ensureTableExists(config) {
+    try {
+      await this.pool.query(`
+        CREATE TABLE IF NOT EXISTS key_value_store (
+          key TEXT PRIMARY KEY,
+          value TEXT NOT NULL
+        )
+      `);
+    } catch (error) {
+      console.error("Failed to create table:", error);
+      throw error;
+    }
   }
 
   async set(key, value) {
@@ -88,7 +107,32 @@ class PostgreSQL {
     currentValue.push(value);
     await this.set(key, currentValue);
   }
+  async getAllData() {
+    try {
+      const res = await this.pool.query(
+        "SELECT key, value FROM key_value_store"
+      );
+      const result = {};
 
+      res.rows.forEach((row) => {
+        let value = row.value;
+
+        // JSON parse işlemi
+        try {
+          value = JSON.parse(value);
+        } catch (e) {
+          // JSON değilse olduğu gibi bırak
+        }
+
+        result[row.key] = value;
+      });
+
+      return result;
+    } catch (error) {
+      console.error("Error fetching all data:", error);
+      throw error;
+    }
+  }
   async ping() {
     try {
       await this.pool.query("SELECT 1");
@@ -102,17 +146,5 @@ class PostgreSQL {
     await this.pool.end();
   }
 }
-
-// Ensure the table exists
-(async () => {
-  const pool = new Pool();
-  await pool.query(`
-        CREATE TABLE IF NOT EXISTS key_value_store (
-            key TEXT PRIMARY KEY,
-            value TEXT NOT NULL
-        )
-    `);
-  await pool.end();
-})();
 
 module.exports = PostgreSQL;

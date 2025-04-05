@@ -33,6 +33,11 @@ class database {
     this.set(path, data);
     return data;
   }
+  getAllData() {
+    let data = this.read();
+    if (!data) data = {};
+    return data;
+  }
   get(path) {
     let data = this.read(),
       result = undefined;
@@ -72,9 +77,9 @@ class database {
   push(path, value) {
     let data = this.read();
     if (!data) data = {};
-    if (_get(path,data) && Array.isArray(_get(path,data))) {
-      _get(path,data).push(value);
-    } else if (!_get(path,data)) {
+    if (_get(path, data) && Array.isArray(_get(path, data))) {
+      _get(path, data).push(value);
+    } else if (!_get(path, data)) {
       _set(path, [value], data);
     }
     fs.truncateSync(this.FilePath);

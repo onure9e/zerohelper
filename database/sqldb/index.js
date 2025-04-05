@@ -187,7 +187,35 @@ class Database {
       });
     });
   }
+  async getAllData() {
+    await this.ready; // Veritabanı hazır olana kadar bekle
+    this._ensureDatabaseInitialized();
 
+    return new Promise((resolve, reject) => {
+      this.db.all(`SELECT key, value FROM key_value_store`, [], (err, rows) => {
+        if (err) {
+          console.error("Error fetching all data:", err.message);
+          return reject(err);
+        }
+
+        const result = {};
+        rows.forEach((row) => {
+          let value = row.value;
+
+          // JSON parse işlemi
+          try {
+            value = JSON.parse(value);
+          } catch (e) {
+            // JSON değilse olduğu gibi bırak
+          }
+
+          result[row.key] = value;
+        });
+
+        resolve(result);
+      });
+    });
+  }
   close() {
     if (this.db) {
       this.db.close((err) => {

@@ -8,6 +8,7 @@ var MySQLDatabase = require("./mysql/index");
 var SQLiteDatabase = require("./sqldb/index");
 var RedisDatabase = require("./redis/index");
 var PostgreSQL = require("./postgresql/index");
+var MigrateDatabase = require("./migrate/index");
 
 module.exports = {
   /**
@@ -45,4 +46,9 @@ module.exports = {
    * @type {PostgreSQL}
    */
   PostgreSQL,
+  /**
+   * Migration utility for databases.
+   * @type {MigrateDatabase}
+   */
+  MigrateDatabase,
 };
