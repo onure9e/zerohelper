@@ -16,6 +16,7 @@ ZeroHelper is a versatile JavaScript package providing helper functions and data
    - [➗ Math Functions](#math-functions-)
 3. [💾 Database Utilities](#-database-utilities)
    - [🗃️ JsonDatabase](#jsondatabase-️)
+   - [♦️ YamlDatabase](#yamldatabase-️)
    - [🗄️ MongoDB](#mongodb-️)
    - [🐬 MySQL](#mysql-)
    - [📱 SQLiteDB](#sqlitedb-)
@@ -170,6 +171,23 @@ ZeroHelper provides multiple database utilities for seamless integration with va
 (async function () {
   const JsonDatabase = require("@onurege3467/zerohelper/database/jsondatabase");
   const db = new JsonDatabase();
+
+  await db.set("foo", "bar");
+  await db.push("array", "x");
+  await db.delete("foo");
+
+  await db.add("number", 1);
+  await db.sub("number", 1);
+
+  await console.log(db.get("foo"));
+  await console.log(db.has("foo"));
+})();
+```
+# YamlDatabase 🗃️
+```js
+(async function () {
+  const YamlDatabase = require("@onurege3467/zerohelper/database/yamldatabase");
+  const db = new YamlDatabase();
 
   await db.set("foo", "bar");
   await db.push("array", "x");
@@ -410,7 +428,14 @@ const targetConfig = {
   }
 }
 ```
-
+```json
+{
+  "type": "yaml",
+  "options": {
+    "filePath": "data.yaml"
+  }
+}
+```
 ```json
 {
   "type": "mongodb",

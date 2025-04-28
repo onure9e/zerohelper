@@ -29,6 +29,7 @@
     "crypto": "^1.0.1",
     "dotenv": "^16.4.7",
     "fs": "^0.0.1-security",
+    "js-yaml": "^4.1.0",
     "jsonwebtoken": "^9.0.2",
     "lodash": "^4.17.21",
     "mongodb": "^6.12.0",
