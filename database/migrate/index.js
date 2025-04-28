@@ -1,4 +1,5 @@
 const JsonDatabase = require("../jsondatabase/index");
+const YamlDatabase = require("../yamldatabase/index"); // Assuming you've saved the YAML class in this path
 const MongoDB = require("../mongodb/index");
 const MySQLDatabase = require("../mysql/index");
 const SQLiteDatabase = require("../sqldb/index");
@@ -33,6 +34,8 @@ async function initializeDatabase(config) {
   switch (config.type) {
     case "json":
       return new JsonDatabase(config.options.filePath);
+    case "yaml":
+      return new YamlDatabase(config.options.filePath);
     case "mongodb":
       const mongoClient = await MongoDB.createData(
         config.options.database,

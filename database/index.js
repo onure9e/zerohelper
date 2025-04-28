@@ -8,6 +8,7 @@ var MySQLDatabase = require("./mysql/index");
 var SQLiteDatabase = require("./sqldb/index");
 var RedisDatabase = require("./redis/index");
 var PostgreSQL = require("./postgresql/index");
+var YamlDatabase = require("./yamldatabase/index"); // Assuming you've saved the YAML class in this path
 var MigrateDatabase = require("./migrate/index");
 
 module.exports = {
@@ -46,6 +47,7 @@ module.exports = {
    * @type {PostgreSQL}
    */
   PostgreSQL,
+  YamlDatabase,
   /**
    * Migration utility for databases.
    * @type {MigrateDatabase}
