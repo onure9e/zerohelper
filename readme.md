@@ -17,6 +17,7 @@ ZeroHelper is a versatile JavaScript package providing helper functions and data
 3. [💾 Database Utilities](#-database-utilities)
    - [🗃️ JsonDatabase](#jsondatabase-️)
    - [♦️ YamlDatabase](#yamldatabase-️)
+   - [🎋 CSV Database](#csv-database-)
    - [🗄️ MongoDB](#mongodb-️)
    - [🐬 MySQL](#mysql-)
    - [📱 SQLiteDB](#sqlitedb-)
@@ -200,7 +201,23 @@ ZeroHelper provides multiple database utilities for seamless integration with va
   await console.log(db.has("foo"));
 })();
 ```
+# CSV Database 🎋
+```js
+(async function () {
+  const csvdb = require("@onurege3467/zerohelper/database/csvdb");
+  const db = new csvdb();
 
+  await db.set("foo", "bar");
+  await db.push("array", "x");
+  await db.delete("foo");
+
+  await db.add("number", 1);
+  await db.sub("number", 1);
+
+  await console.log(db.get("foo"));
+  await console.log(db.has("foo"));
+})();
+```
 # MongoDB 🗄️
 
 ```js
@@ -433,6 +450,14 @@ const targetConfig = {
   "type": "yaml",
   "options": {
     "filePath": "data.yaml"
+  }
+}
+```
+```json
+{
+  "type": "csv",
+  "options": {
+    "filePath": "data.csv"
   }
 }
 ```

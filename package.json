@@ -1,6 +1,6 @@
 {
   "name": "@onurege3467/zerohelper",
-  "version": "3.3.0",
+  "version": "4.0.0",
   "main": "index.js",
   "scripts": {
     "test": "node test.js"
@@ -27,6 +27,7 @@
   "dependencies": {
     "bcrypt": "^5.1.1",
     "crypto": "^1.0.1",
+    "csv": "^6.3.11",
     "dotenv": "^16.4.7",
     "fs": "^0.0.1-security",
     "js-yaml": "^4.1.0",

@@ -36,6 +36,8 @@ async function initializeDatabase(config) {
       return new JsonDatabase(config.options.filePath);
     case "yaml":
       return new YamlDatabase(config.options.filePath);
+    case "csv":
+      return new YamlDatabase(config.options.filePath);
     case "mongodb":
       const mongoClient = await MongoDB.createData(
         config.options.database,
