@@ -9,7 +9,7 @@ var SQLiteDatabase = require("./sqldb/index");
 var RedisDatabase = require("./redis/index");
 var PostgreSQL = require("./postgresql/index");
 var YamlDatabase = require("./yamldatabase/index"); // Assuming you've saved the YAML class in this path
-const CSVDatabase = require("./csvdatabase/index"); // Assuming you've saved the CSV class in this path
+const CSVDatabase = require("./csvdb/index"); // Assuming you've saved the CSV class in this path
 var MigrateDatabase = require("./migrate/index");
 
 module.exports = {
