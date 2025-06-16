@@ -1,58 +1,52 @@
+// database/index.js
+
 /**
- * @module Database
+ * Tüm veritabanı adaptörlerinin uyması gereken ortak arayüz.
+ * Bu, projenin başka yerlerinden de import edilebilir.
+ * @typedef {import('./adapters/IDatabase').IDatabase} IDatabase
  */
 
-var JsonDatabase = require("./jsondatabase/index");
-var MongoDB = require("./mongodb/index");
-var MySQLDatabase = require("./mysql/index");
-var SQLiteDatabase = require("./sqldb/index");
-var RedisDatabase = require("./redis/index");
-var PostgreSQL = require("./postgresql/index");
-var YamlDatabase = require("./yamldatabase/index"); // Assuming you've saved the YAML class in this path
-const CSVDatabase = require("./csvdb/index"); // Assuming you've saved the CSV class in this path
-var MigrateDatabase = require("./migrate/index");
+const MySQLDatabase = require('./adapters/mysql');
+const SQLiteDatabase = require('./adapters/sqlite');
+const MongoDBDatabase = require('./adapters/mongodb');
+const JsonDatabase = require('./adapters/json');
 
-module.exports = {
-  /**
-   * JSON-based database.
-   * @type {JsonDatabase}
-   */
-  JsonDatabase,
-
-  /**
-   * MongoDB-based database.
-   * @type {MongoDB}
-   */
-  MongoDB,
-
-  /**
-   * MySQL-based database.
-   * @type {MySQLDatabase}
-   */
-  MySQLDatabase,
-
-  /**
-   * SQLite-based database.
-   * @type {SQLiteDatabase}
-   */
-  SQLiteDatabase,
-
-  /**
-   * Redis-based database.
-   * @type {RedisDatabase}
-   */
-  RedisDatabase,
-
-  /**
-   * PostgreSQL-based database.
-   * @type {PostgreSQL}
-   */
-  PostgreSQL,
-  YamlDatabase,
-  CSVDatabase,
-  /**
-   * Migration utility for databases.
-   * @type {MigrateDatabase}
-   */
-  MigrateDatabase,
+const adapters = {
+  mysql: MySQLDatabase,
+  sqlite: SQLiteDatabase,
+  mongodb: MongoDBDatabase,
+  json: JsonDatabase,
 };
+
+/**
+ * Belirtilen adaptör tipine göre bir veritabanı örneği oluşturur ve döndürür.
+ * Bu bir "Fabrika Fonksiyonu"dur.
+ *
+ * @param {object} options - Yapılandırma seçenekleri.
+ * @param {keyof adapters} options.adapter - Kullanılacak adaptör ('mysql', 'sqlite', vb.).
+ * @param {object} options.config - Seçilen adaptöre özel yapılandırma.
+ * @returns {IDatabase} - Seçilen adaptör sınıfının bir örneğini döndürür.
+ */
+function createDatabase(options) {
+  const { adapter, config } = options;
+
+  if (!adapter || !adapters[adapter]) {
+    throw new Error(`Geçersiz veya desteklenmeyen adaptör: ${adapter}. Desteklenenler: ${Object.keys(adapters).join(', ')}`);
+  }
+
+  if (!config) {
+    throw new Error(`'${adapter}' adaptörü için yapılandırma (config) gereklidir.`);
+  }
+
+  // İlgili adaptör sınıfını al
+  const DatabaseClass = adapters[adapter];
+
+  // Sınıfın bir örneğini oluştur ve doğrudan döndür
+  return new DatabaseClass(config);
+}
+
+// Artık varsayılan olarak bu fonksiyonu export ediyoruz.
+module.exports = createDatabase;
+
+// Eğer hem fonksiyonu hem de tipleri export etmek isterseniz:
+// module.exports = { createDatabase };

@@ -1,3 +1,7 @@
+/** @typedef {import('./IDatabase').IDatabase} IDatabase */
+/**
+ * @implements {IDatabase}
+ */
 const mysql = require("mysql2/promise");
 
 class MySQLDatabase {

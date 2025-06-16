@@ -399,6 +399,109 @@ ZeroHelper provides multiple database utilities for seamless integration with va
   await db.close();
 })();
 ```
+## Schema DB
+
+```javascript
+const path = require('path');
+const createDatabase = require('@onurege3467/zerohelper/database'); // Adjust the path to your project structure
+
+// --- 1. Using SQLite (Fast and Lightweight) ---
+const sqliteDb = createDatabase({
+  adapter: 'sqlite',
+  config: {
+    filePath: path.join(__dirname, 'data', 'development.sqlite')
+  }
+});
+
+// --- 2. Using MySQL (For Production) ---
+const mysqlDb = createDatabase({
+  adapter: 'mysql',
+  config: {
+    host: 'localhost',
+    user: 'root',
+    password: 'your_password',
+    database: 'my_app_prod'
+  }
+});
+
+// --- 3. Using a JSON File (For Simple Prototyping) ---
+const jsonDb = createDatabase({
+  adapter: 'json',
+  config: {
+    filePath: path.join(__dirname, 'data', 'db.json')
+  }
+});
+
+// --- 4. Using MongoDB ---
+const mongoDb = createDatabase({
+    adapter: 'mongodb',
+    config: {
+        url: 'mongodb://localhost:27017',
+        database: 'my_app_mongo'
+    }
+});
+```
+
+### Basic Operations (CRUD)
+
+No matter which adapter you choose, you can use the following methods in exactly the same way.
+
+```javascript
+async function main() {
+  // Let's use sqliteDb for this example
+  const db = createDatabase({
+    adapter: 'sqlite',
+    config: { filePath: 'app.db' }
+  });
+
+  try {
+    // Insert Data
+    const newUserId = await db.insert('users', { name: 'John Doe', email: 'john@example.com', age: 30 });
+    console.log(`New user added with ID: ${newUserId}`);
+
+    // Select Data
+    const user = await db.selectOne('users', { name: 'John Doe' });
+    console.log('Found user:', user);
+
+    // Update Data
+    await db.update('users', { age: 31 }, { email: 'john@example.com' });
+    console.log('User updated.');
+
+    // Update if exists, or insert if not (Upsert)
+    await db.set('users', { city: 'New York' }, { name: 'John Doe' }); // Updates existing
+    await db.set('users', { name: 'Jane Doe', email: 'jane@example.com' }, { name: 'Jane Doe' }); // Inserts new
+
+    // Select All Data
+    const allUsers = await db.select('users');
+    console.log('All users:', allUsers);
+
+    // Delete Data
+    await db.delete('users', { name: 'John Doe' });
+    console.log('User deleted.');
+
+  } catch (error) {
+    console.error('An error occurred:', error);
+  } finally {
+    // Close the connection
+    await db.close();
+  }
+}
+
+main();
+```
+
+### 📚 API Reference
+
+All adapters implement the following common methods (the `IDatabase` interface):
+
+- `select(table, where)`: Returns an array of all rows matching the query.
+- `selectOne(table, where)`: Returns the first row matching the query as an object, or `null`.
+- `insert(table, data)`: Inserts a new row and returns its ID.
+- `update(table, data, where)`: Updates rows matching the query and returns the number of affected rows.
+- `delete(table, where)`: Deletes rows matching the query and returns the number of affected rows.
+- `set(table, data, where)`: Updates a record if it exists, otherwise inserts it as a new record.
+- `bulkInsert(table, dataArray)`: Inserts an array of objects in a single, optimized operation.
+- `close()`: Safely closes the database connection or file handle.
 
 ## Database Migration
 
