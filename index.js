@@ -1,5 +1,5 @@
-var database = require("./database/index");
-var functions = require("./functions/index");
+var database = require("./database");
+var functions = require("./functions");
 
 module.exports = {
   database,

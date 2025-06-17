@@ -1,11 +1,4 @@
-// database/index.js
-
-/**
- * Tüm veritabanı adaptörlerinin uyması gereken ortak arayüz.
- * Bu, projenin başka yerlerinden de import edilebilir.
- * @typedef {import('./adapters/IDatabase').IDatabase} IDatabase
- */
-
+const IDatabase = require('./adapters/IDatabase');
 const MySQLDatabase = require('./adapters/mysql');
 const SQLiteDatabase = require('./adapters/sqlite');
 const MongoDBDatabase = require('./adapters/mongodb');
@@ -25,7 +18,7 @@ const adapters = {
  * @param {object} options - Yapılandırma seçenekleri.
  * @param {keyof adapters} options.adapter - Kullanılacak adaptör ('mysql', 'sqlite', vb.).
  * @param {object} options.config - Seçilen adaptöre özel yapılandırma.
- * @returns {IDatabase} - Seçilen adaptör sınıfının bir örneğini döndürür.
+ * @returns {IDatabase} - IDatabase arayüzünü uygulayan bir örnek döndürür.
  */
 function createDatabase(options) {
   const { adapter, config } = options;

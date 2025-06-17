@@ -1,11 +1,13 @@
-/** @typedef {import('./IDatabase').IDatabase} IDatabase */
+const IDatabase = require('./IDatabase'); // Arayüzü import et
+
 /**
  * @implements {IDatabase}
  */
 const mysql = require("mysql2/promise");
 
-class MySQLDatabase {
+class MySQLDatabase extends IDatabase{
   constructor(config) {
+    super()
     this.config = config;
     this.pool = null;
 

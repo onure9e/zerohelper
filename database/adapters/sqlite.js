@@ -1,18 +1,19 @@
-/** @typedef {import('./IDatabase').IDatabase} IDatabase */
+const IDatabase = require('./IDatabase'); // Arayüzü import et
+
 /**
  * @implements {IDatabase}
  */
-
 const Database = require('better-sqlite3');
 const fs = require('fs');
 const path = require('path');
 
-class SQLiteDatabase {
+class SQLiteDatabase extends IDatabase{
   /**
    * @param {object} config - Yapılandırma nesnesi.
    * @param {string} config.filePath - SQLite veritabanı dosyasının yolu.
    */
   constructor(config) {
+    super()
     if (!config || !config.filePath) {
       throw new Error('SQLite yapılandırması için "filePath" gereklidir.');
     }

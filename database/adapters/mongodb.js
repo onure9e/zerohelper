@@ -1,10 +1,11 @@
-/** @typedef {import('./IDatabase').IDatabase} IDatabase */
+const IDatabase = require('./IDatabase'); // Arayüzü import et
+
 /**
  * @implements {IDatabase}
  */
 const { MongoClient, ObjectId } = require("mongodb");
 
-class MongoDBDatabase {
+class MongoDBDatabase extends IDatabase{
   constructor(config) {
     this.config = config;
     this.client = new MongoClient(config.url, {

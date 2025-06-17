@@ -1,17 +1,19 @@
-/** @typedef {import('./IDatabase').IDatabase} IDatabase */
+const IDatabase = require('./IDatabase'); // Arayüzü import et
+
 /**
  * @implements {IDatabase}
  */
 const fs = require('fs').promises; // Asenkron dosya işlemleri için
 const path = require('path');
 
-class JsonDatabase {
+class JsonDatabase extends IDatabase{
   /**
    * @param {object} config - Yapılandırma nesnesi.
    * @param {string} config.filePath - JSON veritabanı dosyasının yolu.
    * @param {number} [config.saveInterval=500] - Değişiklikleri dosyaya yazma gecikmesi (ms).
    */
   constructor(config) {
+    super()
     if (!config || !config.filePath) {
       throw new Error('Yapılandırma içinde "filePath" belirtilmelidir.');
     }
