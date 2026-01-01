@@ -4,6 +4,9 @@ import bcrypt from "bcrypt";
 import https from "https";
 import http from "http";
 import { URL } from "url";
+import * as security from './security';
+import * as worker from './worker';
+import * as toon from './toon';
 
 // Random İşlemler
 export function makeUniqueId(): string {
@@ -360,8 +363,8 @@ export function isEmail(email: string): boolean {
 }
 
 export function isPhone(phone: string): boolean {
-  const phoneRegex = /^[\+]?[1-9][\d]{0,15}$/;
-  return phoneRegex.test(phone.replace(/[\s\-\(\)]/g, ''));
+  const phoneRegex = /^[\\+]?[1-9][\\d]{0,15}$/;
+  return phoneRegex.test(phone.replace(/[\\s\-\(\)]/g, ''));
 }
 
 export function isURL(url: string): boolean {
@@ -543,7 +546,7 @@ export class Logger {
     }
   }
 
-  log(level: LogLevel, message: string, data?: any): void {
+  log(level: LogLevel, message: string, data?: any): void { 
     if (!this.shouldLog(level)) return;
     const formatted = this.formatMessage(level, message, data);
     if (level === 'error') {
@@ -670,4 +673,17 @@ export const logger_module = {
   error: logError,
   warn: logWarn,
   debug: logDebug,
+};
+
+export const security_module = {
+  ...security
+};
+
+export const worker_module = {
+  ...worker
+};
+
+export const toon_module = {
+  stringify: toon.stringify,
+  parse: toon.parse
 };

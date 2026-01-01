@@ -1,6 +1,7 @@
-import { IDatabase } from './IDatabase';
+import { IDatabase, HookType, HookFunction } from './IDatabase';
 import { LRUCache } from 'lru-cache';
 import { createClient, RedisClientType } from 'redis';
+import { telemetry } from './telemetry';
 
 export class CacheWrapper extends IDatabase {
   public db: IDatabase;
@@ -21,6 +22,13 @@ export class CacheWrapper extends IDatabase {
     } else {
       this._initMemoryCache(options);
     }
+  }
+
+  /**
+   * Redirect hooks registration to the underlying database instance.
+   */
+  public override on(hook: HookType, fn: HookFunction): void {
+    this.db.on(hook, fn);
   }
 
   private _initMemoryCache(options: any): void {
@@ -46,7 +54,7 @@ export class CacheWrapper extends IDatabase {
     this.ttl = (options.ttl || 300000) / 1000;
     this.keyPrefix = options.keyPrefix || 'db_cache:';
 
-    this.redisClient.on('error', (err) => {
+    this.redisClient.on('error', () => {
       this.redisAvailable = false;
     });
 
@@ -86,13 +94,22 @@ export class CacheWrapper extends IDatabase {
     if (this.cacheType === 'redis' && this.redisAvailable && this.redisClient) {
       try {
         const value = await cache.get(key);
-        return value ? JSON.parse(value) : null;
+        if (value) {
+          telemetry.recordCacheHit();
+          return JSON.parse(value);
+        }
       } catch {
         this.redisAvailable = false;
-        return this._getCache(table).get(key);
+      }
+    } else if (cache instanceof LRUCache) {
+      const value = cache.get(key);
+      if (value) {
+        telemetry.recordCacheHit();
+        return value;
       }
     }
-    return cache.get(key);
+    telemetry.recordCacheMiss();
+    return null;
   }
 
   private async _setCacheValue(cache: any, key: string, value: any, table: string): Promise<void> {
@@ -120,49 +137,16 @@ export class CacheWrapper extends IDatabase {
     if (this.tableCaches[table]) this.tableCaches[table].clear();
   }
 
-  private async _updateCacheByWhere(table: string, where: Record<string, any> | null, newData: any = null): Promise<void> {
-    if (!where || Object.keys(where).length === 0) {
-      await this._clearCache(table);
-      return;
-    }
-
-    if (this.cacheType === 'redis' && this.redisAvailable && this.redisClient) {
-      try {
-        const keys = await this.redisClient.keys(`${this.keyPrefix}${table}:*`);
-        for (const fullKey of keys) {
-          const cacheData = await this.redisClient.get(fullKey);
-          if (cacheData) {
-            const parsedData = JSON.parse(cacheData);
-            if (Object.entries(where).every(([k, v]) => parsedData[k] === v)) {
-              if (newData) await this.redisClient.setEx(fullKey, Math.floor(this.ttl), JSON.stringify(newData));
-              else await this.redisClient.del(fullKey);
-            }
-          }
-        }
-      } catch {
-        await this._clearCache(table);
-      }
-    }
-
-    const cache = this._getCache(table);
-    if (cache instanceof LRUCache) {
-      const keysToDelete: string[] = [];
-      cache.forEach((value, key) => {
-        if (Object.entries(where).every(([k, v]) => value[k] === v)) {
-          if (newData) cache.set(key, newData);
-          else keysToDelete.push(key);
-        }
-      });
-      keysToDelete.forEach(k => cache.delete(k));
-    }
-  }
-
   async select<T = any>(table: string, where: Record<string, any> | null = null): Promise<T[]> {
     const cache = this._getCache(table);
     const key = this._generateKey(table, where);
     let data = await this._getCacheValue(cache, key, table);
     if (data !== null && data !== undefined) return data;
+
+    const start = Date.now();
     data = await this.db.select(table, where);
+    (this.db as any).recordMetric?.('select', table, Date.now() - start);
+
     if (data !== null && data !== undefined) await this._setCacheValue(cache, key, data, table);
     return data;
   }
@@ -172,32 +156,42 @@ export class CacheWrapper extends IDatabase {
     const key = this._generateKey(table + '_one', where);
     let data = await this._getCacheValue(cache, key, table);
     if (data !== null && data !== undefined) return data;
+
+    const start = Date.now();
     data = await this.db.selectOne(table, where);
+    (this.db as any).recordMetric?.('selectOne', table, Date.now() - start);
+
     if (data !== null && data !== undefined) await this._setCacheValue(cache, key, data, table);
     return data;
   }
 
   async insert(table: string, data: Record<string, any>): Promise<any> {
+    const start = Date.now();
     const result = await this.db.insert(table, data);
+    (this.db as any).recordMetric?.('insert', table, Date.now() - start);
     await this._clearCache(table);
     return result;
   }
 
   async update(table: string, data: Record<string, any>, where: Record<string, any>): Promise<number> {
+    const start = Date.now();
     const result = await this.db.update(table, data, where);
-    if (result > 0) await this._updateCacheByWhere(table, where, null);
+    (this.db as any).recordMetric?.('update', table, Date.now() - start);
+    if (result > 0) await this._clearCache(table);
     return result;
   }
 
   async set(table: string, data: Record<string, any>, where: Record<string, any>): Promise<any> {
     const result = await this.db.set(table, data, where);
-    await this._updateCacheByWhere(table, where, null);
+    await this._clearCache(table);
     return result;
   }
 
   async delete(table: string, where: Record<string, any>): Promise<number> {
+    const start = Date.now();
     const result = await this.db.delete(table, where);
-    if (result > 0) await this._updateCacheByWhere(table, where, null);
+    (this.db as any).recordMetric?.('delete', table, Date.now() - start);
+    if (result > 0) await this._clearCache(table);
     return result;
   }
 
@@ -209,13 +203,13 @@ export class CacheWrapper extends IDatabase {
 
   async increment(table: string, increments: Record<string, number>, where: Record<string, any> = {}): Promise<number> {
     const result = await this.db.increment(table, increments, where);
-    if (result > 0) await this._updateCacheByWhere(table, where, null);
+    await this._clearCache(table);
     return result;
   }
 
   async decrement(table: string, decrements: Record<string, number>, where: Record<string, any> = {}): Promise<number> {
     const result = await this.db.decrement(table, decrements, where);
-    if (result > 0) await this._updateCacheByWhere(table, where, null);
+    await this._clearCache(table);
     return result;
   }
 

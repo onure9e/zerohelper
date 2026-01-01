@@ -9,6 +9,8 @@ import RedisDatabase from './redis';
 import CacheWrapper from './cacheWrapper';
 import MigrationManager from './migration';
 import ZPackAdapter, { ZPackDatabase } from './zpack';
+import ToonDatabase from './toon';
+import { DataSeeder } from './seeder';
 
 const adapters: Record<string, any> = {
   mysql: MySQLDatabase,
@@ -18,11 +20,11 @@ const adapters: Record<string, any> = {
   json: JsonDatabase,
   redis: RedisDatabase,
   zpack: ZPackAdapter,
+  toon: ToonDatabase,
 };
 
 /**
  * Belirtilen adaptör tipine göre bir veritabanı örneği oluşturur ve döndürür.
- * Bu bir "Fabrika Fonksiyonu"dur.
  */
 export function createDatabase(options: DatabaseOptions): IDatabase {
   const { adapter, config } = options;
@@ -42,13 +44,15 @@ export function createDatabase(options: DatabaseOptions): IDatabase {
     const wrapper = new CacheWrapper(dbInstance, (config as any).cache);
     return new Proxy(wrapper, {
       get: (target, prop) => {
-        if (typeof (target as any)[prop] !== 'undefined') {
-          return (target as any)[prop];
-        } else if (typeof (target as any).db[prop] === 'function') {
-          return (target as any).db[prop].bind((target as any).db);
-        } else {
-          return (target as any).db[prop];
+        if (prop in target) {
+          const val = (target as any)[prop];
+          return typeof val === 'function' ? val.bind(target) : val;
         }
+        if (prop in (target as any).db) {
+          const val = (target as any).db[prop];
+          return typeof val === 'function' ? val.bind((target as any).db) : val;
+        }
+        return undefined;
       }
     }) as unknown as IDatabase;
   }
@@ -56,5 +60,5 @@ export function createDatabase(options: DatabaseOptions): IDatabase {
   return dbInstance as IDatabase;
 }
 
-export { MigrationManager, ZPackDatabase, ZPackAdapter };
+export { MigrationManager, ZPackDatabase, ZPackAdapter, DataSeeder, ToonDatabase };
 export default createDatabase;

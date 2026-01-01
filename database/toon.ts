@@ -1,10 +1,16 @@
 import { IDatabase } from './IDatabase';
 import fs from 'fs/promises';
-import { writeFileSync } from 'fs';
+import { writeFileSync, existsSync } from 'fs';
 import path from 'path';
-import { JsonConfig } from './types';
+import { stringify, parse } from '../functions/toon';
 
-export class JsonDatabase extends IDatabase {
+export interface ToonConfig {
+  filePath: string;
+  saveInterval?: number;
+  cache?: any;
+}
+
+export class ToonDatabase extends IDatabase {
   private filePath: string;
   private db: Record<string, any[]> = {};
   private isDirty: boolean = false;
@@ -14,11 +20,11 @@ export class JsonDatabase extends IDatabase {
   private saveInterval: number;
   private initPromise: Promise<void>;
 
-  constructor(config: JsonConfig) {
+  constructor(config: ToonConfig) {
     super();
-    if (!config || !config.filePath) throw new Error('Yapılandırma içinde "filePath" belirtilmelidir.');
+    if (!config || !config.filePath) throw new Error('ToonDB: "filePath" gereklidir.');
     this.filePath = config.filePath;
-    this.saveInterval = 500;
+    this.saveInterval = config.saveInterval || 500;
     process.on('exit', () => this.flushSync());
     this.initPromise = this._load();
   }
@@ -33,16 +39,16 @@ export class JsonDatabase extends IDatabase {
   private async _load(): Promise<void> {
     try {
       const dir = path.dirname(this.filePath);
-      await fs.mkdir(dir, { recursive: true });
-      const fileContent = await fs.readFile(this.filePath, 'utf-8');
-      this.db = JSON.parse(fileContent);
-    } catch (error: any) {
-      if (error.code === 'ENOENT') {
+      if (!existsSync(dir)) await fs.mkdir(dir, { recursive: true });
+      if (!existsSync(this.filePath)) {
         this.db = {};
         await this._saveNow();
-      } else {
-        this.db = {};
+        return;
       }
+      const content = await fs.readFile(this.filePath, 'utf-8');
+      this.db = parse(content);
+    } catch (error) {
+      this.db = {};
     }
   }
 
@@ -78,14 +84,15 @@ export class JsonDatabase extends IDatabase {
     if (this.saveDebounceTimeout) clearTimeout(this.saveDebounceTimeout);
     this.saveDebounceTimeout = null;
     try {
-      await fs.writeFile(this.filePath, JSON.stringify(this.db, null, 2));
+      const toonContent = stringify(this.db);
+      await fs.writeFile(this.filePath, toonContent);
       this.isDirty = false;
-    } catch (error) { console.error("Veritabanı dosyasına yazılırken hata:", error); }
+    } catch (error) { console.error("ToonDB save error:", error); }
   }
 
   private flushSync(): void {
     if (this.isDirty) {
-      try { writeFileSync(this.filePath, JSON.stringify(this.db, null, 2)); this.isDirty = false; } catch (error) {}
+      try { writeFileSync(this.filePath, stringify(this.db)); this.isDirty = false; } catch (error) {}
     }
   }
 
@@ -118,7 +125,7 @@ export class JsonDatabase extends IDatabase {
       return this._queueRequest(() => {
         let affected = 0;
         this.db[table].forEach(row => {
-          if (Object.keys(where).every(k => row[k] === where[k])) {
+          if (Object.keys(where).every(k => String(row[k]) === String(where[k]))) {
             Object.assign(row, data);
             affected++;
           }
@@ -135,7 +142,7 @@ export class JsonDatabase extends IDatabase {
       await this.ensureTable(table);
       return this._queueRequest(() => {
         const initial = this.db[table].length;
-        this.db[table] = this.db[table].filter(row => !Object.keys(where).every(k => row[k] === where[k]));
+        this.db[table] = this.db[table].filter(row => !Object.keys(where).every(k => String(row[k]) === String(where[k])));
         const affected = initial - this.db[table].length;
         this.runHooks('afterDelete', table, { affected });
         return affected;
@@ -147,7 +154,7 @@ export class JsonDatabase extends IDatabase {
     return this._execute('select', table, async () => {
       await this.initPromise;
       const results = where && Object.keys(where).length > 0 
-        ? (this.db[table] || []).filter(row => Object.keys(where).every(k => row[k] === where[k]))
+        ? (this.db[table] || []).filter(row => Object.keys(where).every(k => String(row[k]) === String(where[k])))
         : (this.db[table] || []);
       return JSON.parse(JSON.stringify(results)) as T[];
     });
@@ -181,7 +188,7 @@ export class JsonDatabase extends IDatabase {
       return this._queueRequest(() => {
         let affected = 0;
         this.db[table].forEach(row => {
-          if (Object.keys(where).every(k => row[k] === where[k])) {
+          if (Object.keys(where).every(k => String(row[k]) === String(where[k]))) {
             for (const [f, v] of Object.entries(incs)) row[f] = (Number(row[f]) || 0) + v;
             affected++;
           }
@@ -200,4 +207,4 @@ export class JsonDatabase extends IDatabase {
   async close(): Promise<void> { await this._saveNow(); }
 }
 
-export default JsonDatabase;
+export default ToonDatabase;

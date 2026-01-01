@@ -48,6 +48,13 @@ export interface ZPackConfig {
   filePath: string;
   autoFlush?: boolean;
   cache?: CacheConfig;
+  indexFields?: Record<string, string[]>;
+}
+
+export interface ToonConfig {
+  filePath: string;
+  saveInterval?: number;
+  cache?: CacheConfig;
 }
 
 export interface CacheConfig {
@@ -59,7 +66,6 @@ export interface CacheConfig {
   password?: string;
 }
 
-// Discriminated Union: Bu yapı sayesinde adapter ismine göre config içeriği dinamik değişir.
 export type DatabaseOptions =
   | { adapter: 'mysql'; config: MySQLConfig }
   | { adapter: 'sqlite'; config: SQLiteConfig }
@@ -67,6 +73,7 @@ export type DatabaseOptions =
   | { adapter: 'postgres'; config: PostgreSQLConfig }
   | { adapter: 'json'; config: JsonConfig }
   | { adapter: 'redis'; config: RedisConfig }
-  | { adapter: 'zpack'; config: ZPackConfig };
+  | { adapter: 'zpack'; config: ZPackConfig }
+  | { adapter: 'toon'; config: ToonConfig };
 
 export type AdapterType = DatabaseOptions['adapter'];

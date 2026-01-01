@@ -1,5 +1,5 @@
 import { IDatabase } from './IDatabase';
-import mysql, { Pool, Connection, FieldPacket } from "mysql2/promise";
+import mysql, { Pool } from "mysql2/promise";
 import { MySQLConfig } from './types';
 
 export class MySQLDatabase extends IDatabase {
@@ -21,12 +21,8 @@ export class MySQLDatabase extends IDatabase {
           user: config.user,
           password: config.password,
           typeCast: (field: any, next: () => any) => {
-            if (field.type === 'TINY' && field.length === 1) {
-              return (field.string() === '1');
-            }
-            if (['INT', 'DECIMAL', 'NEWDECIMAL', 'FLOAT', 'DOUBLE'].includes(field.type)) {
-              return Number(field.string());
-            }
+            if (field.type === 'TINY' && field.length === 1) return (field.string() === '1');
+            if (['INT', 'DECIMAL', 'NEWDECIMAL', 'FLOAT', 'DOUBLE'].includes(field.type)) return Number(field.string());
             return next();
           }
         });
@@ -37,21 +33,11 @@ ${config.database}
         await connection.end();
 
         this.pool = mysql.createPool({
-          host: config.host,
-          port: config.port || 3306,
-          user: config.user,
-          password: config.password,
-          database: config.database,
-          waitForConnections: true,
-          connectionLimit: config.connectionLimit || 10,
-          queueLimit: 0,
+          host: config.host, port: config.port || 3306, user: config.user, password: config.password, database: config.database,
+          waitForConnections: true, connectionLimit: config.connectionLimit || 10, queueLimit: 0,
           typeCast: (field: any, next: () => any) => {
-            if (field.type === 'TINY' && field.length === 1) {
-              return (field.string() === '1');
-            }
-            if (['INT', 'DECIMAL', 'NEWDECIMAL', 'FLOAT', 'DOUBLE'].includes(field.type)) {
-              return Number(field.string());
-            }
+            if (field.type === 'TINY' && field.length === 1) return (field.string() === '1');
+            if (['INT', 'DECIMAL', 'NEWDECIMAL', 'FLOAT', 'DOUBLE'].includes(field.type)) return Number(field.string());
             return next();
           }
         });
@@ -60,234 +46,113 @@ ${config.database}
         resolve(this.pool);
         this._processQueue();
       } catch (error) {
-        console.error("MySQL connection error:", error);
         reject(error);
       }
     });
   }
 
-  private _getColumnType(value: any): string {
-    if (value === null || value === undefined) return 'TEXT';
-    if (typeof value === 'boolean') return 'BOOLEAN';
-    if (typeof value === 'number') {
-      if (Number.isInteger(value)) {
-        if (value >= -128 && value <= 127) return 'TINYINT';
-        if (value >= -32768 && value <= 32767) return 'SMALLINT';
-        if (value >= -2147483648 && value <= 2147483647) return 'INT';
-        return 'BIGINT';
-      }
-      return 'DOUBLE';
-    }
-    if (typeof value === 'string') {
-      const length = value.length;
-      if (length <= 255) return 'VARCHAR(255)';
-      if (length <= 65535) return 'TEXT';
-      if (length <= 16777215) return 'MEDIUMTEXT';
-      return 'LONGTEXT';
-    }
-    if (typeof value === 'object') {
-      const jsonString = JSON.stringify(value);
-      return jsonString.length <= 65535 ? 'JSON' : 'LONGTEXT';
-    }
-    if (value instanceof Date) return 'DATETIME';
-    return 'TEXT';
-  }
-
-  private _getBestColumnType(values: any[]): string {
-    const types = values.map(val => this._getColumnType(val));
-    const uniqueTypes = [...new Set(types)];
-    if (uniqueTypes.length === 1) return uniqueTypes[0];
-
-    const typePriority: Record<string, number> = {
-      'LONGTEXT': 10, 'MEDIUMTEXT': 9, 'TEXT': 8, 'JSON': 7, 'VARCHAR(255)': 6,
-      'DATETIME': 5, 'DOUBLE': 4, 'BIGINT': 3, 'INT': 2, 'SMALLINT': 1, 'TINYINT': 0, 'BOOLEAN': -1
+  private async _queueRequest<T>(operation: () => Promise<T>, opName: string, table: string): Promise<T> {
+    const start = Date.now();
+    const execute = async () => {
+      const res = await operation();
+      this.recordMetric(opName, table, Date.now() - start);
+      return res;
     };
 
-    return uniqueTypes.sort((a, b) => (typePriority[b] || 0) - (typePriority[a] || 0))[0];
-  }
-
-  private async _ensureMissingColumns(table: string, data: Record<string, any>): Promise<void> {
-    const existingColumns: any[] = await this.query(`DESCRIBE 
-${table}
-`).catch(() => []);
-    const existingColumnNames = existingColumns.map((col: any) => col.Field);
-    
-    for (const key of Object.keys(data)) {
-      if (!existingColumnNames.includes(key)) {
-        const columnType = this._getColumnType(data[key]);
-        await this.query(`ALTER TABLE 
-${table}
- ADD COLUMN 
-${key}
- ${columnType}`);
-      }
-    }
-  }
-
-  private async _queueRequest<T>(operation: () => Promise<T>): Promise<T> {
-    if (this._connected) {
-      return operation();
-    } else {
-      return new Promise((resolve, reject) => {
-        this._queue.push({ operation, resolve, reject });
-      });
-    }
+    if (this._connected) return execute();
+    return new Promise((resolve, reject) => {
+      this._queue.push({ operation: execute, resolve, reject });
+    });
   }
 
   private async _processQueue(): Promise<void> {
     if (!this._connected) return;
     while (this._queue.length > 0) {
       const item = this._queue.shift();
-      if (item) {
-        try {
-          const result = await item.operation();
-          item.resolve(result);
-        } catch (error) {
-          item.reject(error);
-        }
-      }
+      if (item) { try { item.resolve(await item.operation()); } catch (error) { item.reject(error); } }
     }
   }
 
   async query(sql: string, params: any[] = []): Promise<any> {
-    return this._queueRequest(async () => {
-      const pool = await this._connectionPromise;
-      const [rows] = await pool.execute(sql, params);
-      return rows;
-    });
+    const pool = await this._connectionPromise;
+    const [rows] = await pool.execute(sql, params);
+    return rows;
   }
 
   async ensureTable(table: string, data: Record<string, any> = {}): Promise<void> {
-    return this._queueRequest(async () => {
-      const escapedTable = mysql.escape(table);
-      const tables: any[] = await this.query(`SHOW TABLES LIKE ${escapedTable}`);
-      if (tables.length === 0) {
-        const columnDefinitions = Object.keys(data).map(col => {
-          const columnType = this._getColumnType(data[col]);
-          return `
+    const escapedTable = mysql.escape(table);
+    const tables: any[] = await this.query(`SHOW TABLES LIKE ${escapedTable}`);
+    if (tables.length === 0) {
+      const columnDefinitions = Object.keys(data).map(col => `
 ${col}
- ${columnType}`;
-        });
-        
-        const columnsPart = columnDefinitions.length > 0 ? ', ' + columnDefinitions.join(", ") : '';
-        const createTableSQL = `
-          CREATE TABLE 
+ ${this._getColumnType(data[col])}`);
+      const columnsPart = columnDefinitions.length > 0 ? ', ' + columnDefinitions.join(", ") : '';
+      await this.query(`CREATE TABLE 
 ${table}
- (
-            _id INT PRIMARY KEY AUTO_INCREMENT
-            ${columnsPart}
-          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-        `;
-        await this.query(createTableSQL);
-      }
-    });
+ (_id INT PRIMARY KEY AUTO_INCREMENT ${columnsPart}) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+    }
   }
 
   async insert(table: string, data: Record<string, any>): Promise<number> {
+    await this.runHooks('beforeInsert', table, data);
     return this._queueRequest(async () => {
-      const copy = { ...data };
-      await this.ensureTable(table, copy);
-      await this._ensureMissingColumns(table, copy);
-
-      const existingColumns: any[] = await this.query(`DESCRIBE 
-${table}
-`);
-      const primaryKeyColumn = existingColumns.find(col => col.Key === 'PRI' && col.Extra.includes('auto_increment'));
-
-      if (primaryKeyColumn && copy[primaryKeyColumn.Field] !== undefined) {
-        delete copy[primaryKeyColumn.Field];
-      }
-
-      const keys = Object.keys(copy);
+      await this.ensureTable(table, data);
+      const keys = Object.keys(data);
       const placeholders = keys.map(() => "?").join(",");
-      const values = Object.values(copy).map(value => this._serializeValue(value));
+      const values = Object.values(data).map(v => this._serializeValue(v));
       const sql = `INSERT INTO 
 ${table}
  (${keys.map(k => `
 ${k}
 `).join(",")}) VALUES (${placeholders})`;
-
       const result = await this.query(sql, values);
+      const finalData = { _id: result.insertId, ...data };
+      await this.runHooks('afterInsert', table, finalData);
       return result.insertId;
-    });
+    }, 'insert', table);
   }
 
   async update(table: string, data: Record<string, any>, where: Record<string, any>): Promise<number> {
+    await this.runHooks('beforeUpdate', table, { data, where });
     return this._queueRequest(async () => {
-      await this.ensureTable(table, { ...data, ...where });
-      await this._ensureMissingColumns(table, { ...data, ...where });
-      
       const setString = Object.keys(data).map(k => `
 ${k}
  = ?`).join(", ");
-      const whereString = Object.keys(where).map(k => `
-${k}
- = ?`).join(" AND ");
+      const { whereClause, values: whereValues } = this._buildWhereClause(where);
       const sql = `UPDATE 
 ${table}
- SET ${setString} WHERE ${whereString}`;
-      const values = [...Object.values(data).map(v => this._serializeValue(v)), ...Object.values(where).map(v => this._serializeValue(v))];
-      const result = await this.query(sql, values);
+ SET ${setString} ${whereClause}`;
+      const result = await this.query(sql, [...Object.values(data).map(v => this._serializeValue(v)), ...whereValues]);
+      await this.runHooks('afterUpdate', table, { affected: result.affectedRows });
       return result.affectedRows;
-    });
+    }, 'update', table);
   }
 
   async delete(table: string, where: Record<string, any>): Promise<number> {
+    await this.runHooks('beforeDelete', table, where);
     return this._queueRequest(async () => {
-      if (!where || Object.keys(where).length === 0) return 0;
-      await this.ensureTable(table, { ...where });
-      await this._ensureMissingColumns(table, where);
-      
-      const whereString = Object.keys(where).map(k => `
-${k}
- = ?`).join(" AND ");
+      const { whereClause, values } = this._buildWhereClause(where);
       const sql = `DELETE FROM 
 ${table}
- WHERE ${whereString}`;
-      const result = await this.query(sql, Object.values(where).map(v => this._serializeValue(v)));
+ ${whereClause}`;
+      const result = await this.query(sql, values);
+      await this.runHooks('afterDelete', table, { affected: result.affectedRows });
       return result.affectedRows;
-    });
+    }, 'delete', table);
   }
 
   async select<T = any>(table: string, where: Record<string, any> | null = null): Promise<T[]> {
     return this._queueRequest(async () => {
-      await this.ensureTable(table, where || {});
-      if (where && Object.keys(where).length > 0) {
-        await this._ensureMissingColumns(table, where);
-      }
-      
-      let sql = `SELECT * FROM 
+      const { whereClause, values } = this._buildWhereClause(where || {});
+      const rows = await this.query(`SELECT * FROM 
 ${table}
-`;
-      let params: any[] = [];
-      if (where && Object.keys(where).length > 0) {
-        const whereString = Object.keys(where).map(k => `
-${k}
- = ?`).join(" AND ");
-        sql += ` WHERE ${whereString}`;
-        params = Object.values(where).map(v => this._serializeValue(v));
-      }
-
-      const rows = await this.query(sql, params);
+ ${whereClause}`, values);
       return rows.map((row: any) => {
         const newRow: any = {};
-        for (const key in row) {
-          newRow[key] = this._deserializeValue(row[key]);
-        }
+        for (const key in row) newRow[key] = this._deserializeValue(row[key]);
         return newRow as T;
       });
-    });
-  }
-
-  async set(table: string, data: Record<string, any>, where: Record<string, any>): Promise<any> {
-    return this._queueRequest(async () => {
-      const existing = await this.select(table, where);
-      if (existing.length === 0) {
-        return await this.insert(table, { ...where, ...data });
-      } else {
-        return await this.update(table, data, where);
-      }
-    });
+    }, 'select', table);
   }
 
   async selectOne<T = any>(table: string, where: Record<string, any> | null = null): Promise<T | null> {
@@ -295,31 +160,16 @@ ${k}
     return results[0] || null;
   }
 
+  async set(table: string, data: Record<string, any>, where: Record<string, any>): Promise<any> {
+    const existing = await this.selectOne(table, where);
+    return existing ? this.update(table, data, where) : this.insert(table, { ...where, ...data });
+  }
+
   async bulkInsert(table: string, dataArray: Record<string, any>[]): Promise<number> {
     return this._queueRequest(async () => {
-      if (!Array.isArray(dataArray) || dataArray.length === 0) return 0;
+      if (!dataArray.length) return 0;
       await this.ensureTable(table, dataArray[0]);
-
-      const existingColumns: any[] = await this.query(`DESCRIBE 
-${table}
-`);
-      const existingColumnNames = existingColumns.map((col: any) => col.Field);
-      const allKeys = new Set<string>();
-      dataArray.forEach(obj => Object.keys(obj).forEach(key => allKeys.add(key)));
-
-      for (const key of allKeys) {
-        if (!existingColumnNames.includes(key)) {
-          const columnValues = dataArray.map(obj => obj[key]).filter(val => val !== undefined && val !== null);
-          const columnType = columnValues.length > 0 ? this._getBestColumnType(columnValues) : 'TEXT';
-          await this.query(`ALTER TABLE 
-${table}
- ADD COLUMN 
-${key}
- ${columnType}`);
-        }
-      }
-
-      const keys = Array.from(allKeys);
+      const keys = Object.keys(dataArray[0]);
       const placeholders = dataArray.map(() => `(${keys.map(() => '?').join(',')})`).join(',');
       const values = dataArray.flatMap(obj => keys.map(k => this._serializeValue(obj[k])));
       const sql = `INSERT INTO 
@@ -329,71 +179,59 @@ ${k}
 `).join(",")}) VALUES ${placeholders}`;
       const result = await this.query(sql, values);
       return result.affectedRows;
-    });
+    }, 'bulkInsert', table);
   }
 
-  async close(): Promise<void> {
-    if (this.pool) await this.pool.end();
-  }
-
-  private _serializeValue(value: any): any {
-    if (value instanceof Date) return value.toISOString().slice(0, 19).replace('T', ' ');
-    if (Array.isArray(value) || (typeof value === 'object' && value !== null)) return JSON.stringify(value);
-    return value;
-  }
-
-  private _deserializeValue(value: any): any {
-    try {
-      if (typeof value === 'string' && (value.startsWith('[') || value.startsWith('{'))) {
-        const parsed = JSON.parse(value);
-        if (typeof parsed === 'object' && parsed !== null) return parsed;
-      }
-    } catch (e) {}
-    return value;
-  }
-
-  async increment(table: string, increments: Record<string, number>, where: Record<string, any> = {}): Promise<number> {
+  async increment(table: string, increments: Record<string, number>, where: Record<string, any>): Promise<number> {
     return this._queueRequest(async () => {
-      const incrementClauses = Object.keys(increments).map(field => `
-${field}
+      const clauses = Object.keys(increments).map(f => `
+${f}
  = 
-${field}
+${f}
  + ?`).join(', ');
-      const incrementValues = Object.values(increments);
-      const { whereClause, values: whereValues } = this._buildWhereClause(where);
+      const { whereClause, values } = this._buildWhereClause(where);
       const sql = `UPDATE 
 ${table}
- SET ${incrementClauses}${whereClause}`;
-      const result = await this.query(sql, [...incrementValues, ...whereValues]);
+ SET ${clauses} ${whereClause}`;
+      const result = await this.query(sql, [...Object.values(increments), ...values]);
       return result.affectedRows;
-    });
+    }, 'increment', table);
   }
 
-  async decrement(table: string, decrements: Record<string, number>, where: Record<string, any> = {}): Promise<number> {
-    return this._queueRequest(async () => {
-      const decrementClauses = Object.keys(decrements).map(field => `
-${field}
- = 
-${field}
- + ?`).join(', ');
-      const decrementValues = Object.values(decrements);
-      const { whereClause, values: whereValues } = this._buildWhereClause(where);
-      const sql = `UPDATE 
-${table}
- SET ${decrementClauses}${whereClause}`;
-      const result = await this.query(sql, [...decrementValues, ...whereValues]);
-      return result.affectedRows;
-    });
+  async decrement(table: string, decrements: Record<string, number>, where: Record<string, any>): Promise<number> {
+    const incs: any = {};
+    for (const k in decrements) incs[k] = -decrements[k];
+    return this.increment(table, incs, where);
   }
 
-  private _buildWhereClause(where: Record<string, any> = {}): { whereClause: string; values: any[] } {
-    const conditions = Object.keys(where);
-    if (conditions.length === 0) return { whereClause: '', values: [] };
-    const whereClause = ' WHERE ' + conditions.map(key => `
-${key}
- = ?`).join(' AND ');
-    const values = Object.values(where).map(v => this._serializeValue(v));
-    return { whereClause, values };
+  async close(): Promise<void> { if (this.pool) await this.pool.end(); }
+
+  private _getColumnType(v: any): string {
+    if (v === null || v === undefined) return 'TEXT';
+    if (typeof v === 'boolean') return 'BOOLEAN';
+    if (typeof v === 'number') return Number.isInteger(v) ? 'INT' : 'DOUBLE';
+    if (v instanceof Date) return 'DATETIME';
+    return 'TEXT';
+  }
+
+  private _serializeValue(v: any): any {
+    if (v instanceof Date) return v.toISOString().slice(0, 19).replace('T', ' ');
+    return (typeof v === 'object' && v !== null) ? JSON.stringify(v) : v;
+  }
+
+  private _deserializeValue(v: any): any {
+    if (typeof v === 'string' && (v.startsWith('{') || v.startsWith('['))) {
+      try { return JSON.parse(v); } catch { return v; }
+    }
+    return v;
+  }
+
+  private _buildWhereClause(where: Record<string, any>): { whereClause: string; values: any[] } {
+    const keys = Object.keys(where);
+    if (!keys.length) return { whereClause: '', values: [] };
+    return { whereClause: 'WHERE ' + keys.map(k => `
+${k}
+ = ?`).join(' AND '), values: Object.values(where).map(v => this._serializeValue(v)) };
   }
 }
 
