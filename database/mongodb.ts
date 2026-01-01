@@ -10,14 +10,14 @@ export class MongoDBDatabase extends IDatabase {
   private _connected: boolean = false;
   private _connectionPromise: Promise<Db>;
 
-  constructor(config: any) {
+  constructor(config: MongoDBConfig) {
     super();
     this.config = config;
-    this.client = new MongoClient(config.url || config.uri);
+    this.client = new MongoClient(config.url || `mongodb://${config.host || 'localhost'}:${config.port || 27017}`);
     this._connectionPromise = new Promise(async (resolve, reject) => {
       try {
         await this.client.connect();
-        this.db = this.client.db(config.database || config.dbName);
+        this.db = this.client.db(config.database || 'test');
         this._connected = true;
         resolve(this.db);
         this._processQueue();
@@ -60,7 +60,6 @@ export class MongoDBDatabase extends IDatabase {
     return this._execute('update', collection, async () => {
       const db = await this._connectionPromise;
       const res = await db.collection(collection).updateMany(where, { $set: data });
-      await this.runHooks('afterUpdate', collection, { affected: res.modifiedCount });
       return Number(res.modifiedCount);
     });
   }
@@ -70,7 +69,6 @@ export class MongoDBDatabase extends IDatabase {
     return this._execute('delete', collection, async () => {
       const db = await this._connectionPromise;
       const res = await db.collection(collection).deleteMany(where);
-      await this.runHooks('afterDelete', collection, { affected: res.deletedCount });
       return res.deletedCount;
     });
   }

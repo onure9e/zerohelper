@@ -14,10 +14,10 @@ export class PostgreSQLDatabase extends IDatabase {
     this.config = config;
     this._connectionPromise = new Promise(async (resolve, reject) => {
       try {
-        const tempPool = new Pool({ host: config.host, port: config.port || 5432, user: config.user, password: config.password, database: 'postgres' });
+        const tempPool = new Pool({ host: config.host || 'localhost', port: config.port || 5432, user: config.username, password: config.password, database: 'postgres' });
         try { await tempPool.query(`CREATE DATABASE "${config.database}"`); } catch (e: any) { if (!e.message.includes('already exists')) console.warn(e.message); }
         await tempPool.end();
-        this.pool = new Pool({ host: config.host, port: config.port || 5432, user: config.user, password: config.password, database: config.database, max: config.connectionLimit || 10 });
+        this.pool = new Pool({ host: config.host || 'localhost', port: config.port || 5432, user: config.username, password: config.password, database: config.database, max: config.poolSize || 10 });
         this._connected = true;
         resolve(this.pool);
         this._processQueue();
@@ -27,14 +27,10 @@ export class PostgreSQLDatabase extends IDatabase {
 
   private async _execute<T>(op: string, table: string, fn: () => Promise<T>): Promise<T> {
     const start = Date.now();
-    const execute = async () => {
-      const res = await fn();
-      this.recordMetric(op, table, Date.now() - start);
-      return res;
-    };
-    if (this._connected) return execute();
-    return new Promise((resolve, reject) => this._queue.push({ operation: execute, resolve, reject }));
-  }
+    const res = await fn();
+    this.recordMetric(op, table, Date.now() - start);
+    return res;
+  };
 
   private async _processQueue(): Promise<void> {
     if (!this._connected) return;
@@ -50,24 +46,19 @@ export class PostgreSQLDatabase extends IDatabase {
     return res.rows;
   }
 
-  private async _ensureMissingColumns(table: string, data: Record<string, any>): Promise<void> {
-    const existing = await this.query(`SELECT column_name FROM information_schema.columns WHERE table_name = $1 AND table_schema = 'public'`, [table]);
-    const names = existing.map((c: any) => c.column_name);
-    for (const key of Object.keys(data)) {
-      if (key !== '_id' && !names.includes(key)) {
-        const type = this._getColumnType(data[key]);
-        await this.query(`ALTER TABLE "${table}" ADD COLUMN "${key}" ${type}`);
-      }
-    }
-  }
-
   async ensureTable(table: string, data: any = {}): Promise<void> {
     const tables = await this.query(`SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name = $1`, [table]);
     if (tables.length === 0) {
-      const defs = Object.keys(data).map(k => `"${k}" ${this._getColumnType(data[k])}`);
+      const defs = Object.keys(data).map(k => `"${k}" TEXT`);
       await this.query(`CREATE TABLE "${table}" ("_id" SERIAL PRIMARY KEY ${defs.length ? ', ' + defs.join(",") : ''})`);
     } else {
-      await this._ensureMissingColumns(table, data);
+      const existing = await this.query(`SELECT column_name FROM information_schema.columns WHERE table_name = $1 AND table_schema = 'public'`, [table]);
+      const names = existing.map((c: any) => c.column_name);
+      for (const key of Object.keys(data)) {
+        if (key !== '_id' && !names.includes(key)) {
+          await this.query(`ALTER TABLE "${table}" ADD COLUMN "${key}" TEXT`);
+        }
+      }
     }
   }
 
@@ -89,10 +80,10 @@ export class PostgreSQLDatabase extends IDatabase {
     return this._execute('update', table, async () => {
       await this.ensureTable(table, { ...data, ...where });
       const set = Object.keys(data).map((k, i) => `"${k}" = $${i + 1}`).join(",");
-      const wKeys = Object.keys(where);
-      const sql = `UPDATE "${table}" SET ${set} WHERE ${wKeys.map((k, i) => `"${k}" = $${Object.keys(data).length + i + 1}`).join(" AND ")}`;
+      const { whereClause, values: whereValues } = this._buildWhereClause(where);
+      const sql = `UPDATE "${table}" SET ${set} ${whereClause}`;
       const pool = await this._connectionPromise;
-      const res = await pool.query(sql, [...Object.values(data).map(v => this._serializeValue(v)), ...Object.values(where).map(v => this._serializeValue(v))]);
+      const res = await pool.query(sql, [...Object.values(data).map(v => this._serializeValue(v)), ...whereValues]);
       return res.rowCount ?? 0;
     });
   }
@@ -101,10 +92,10 @@ export class PostgreSQLDatabase extends IDatabase {
     await this.runHooks('beforeDelete', table, where);
     return this._execute('delete', table, async () => {
       await this.ensureTable(table, where);
-      const keys = Object.keys(where);
-      const sql = `DELETE FROM "${table}" WHERE ${keys.map((k, i) => `"${k}" = $${i + 1}`).join(" AND ")}`;
+      const { whereClause, values } = this._buildWhereClause(where);
+      const sql = `DELETE FROM "${table}" ${whereClause}`;
       const pool = await this._connectionPromise;
-      const res = await pool.query(sql, Object.values(where).map(v => this._serializeValue(v)));
+      const res = await pool.query(sql, values);
       return res.rowCount ?? 0;
     });
   }
@@ -112,12 +103,11 @@ export class PostgreSQLDatabase extends IDatabase {
   async select<T = any>(table: string, where: any = null): Promise<T[]> {
     return this._execute('select', table, async () => {
       await this.ensureTable(table, where || {});
-      const keys = where ? Object.keys(where) : [];
-      const sql = `SELECT * FROM "${table}"` + (keys.length ? ` WHERE ${keys.map((k, i) => `"${k}" = $${i + 1}`).join(" AND ")}` : '');
-      const rows = await this.query(sql, Object.values(where || {}).map(v => this._serializeValue(v)));
+      const { whereClause, values } = this._buildWhereClause(where);
+      const rows = await this.query(`SELECT * FROM "${table}" ${whereClause}`, values);
       return rows.map((r: any) => {
         const nr: any = {};
-        for (const k in r) nr[k] = this._deserializeValue(r[k]);
+        for (const k in r) nr[k] = r[k];
         return nr as T;
       });
     });
@@ -135,21 +125,18 @@ export class PostgreSQLDatabase extends IDatabase {
 
   async bulkInsert(table: string, dataArray: any[]): Promise<number> {
     if (!dataArray.length) return 0;
-    return this._execute('bulkInsert', table, async () => {
-      await this.ensureTable(table, dataArray[0]);
-      for (const d of dataArray) await this.insert(table, d);
-      return dataArray.length;
-    });
+    for (const d of dataArray) await this.insert(table, d);
+    return dataArray.length;
   }
 
   async increment(table: string, incs: Record<string, number>, where: any): Promise<number> {
     return this._execute('increment', table, async () => {
       await this.ensureTable(table, where);
       const set = Object.keys(incs).map((f, i) => `"${f}" = "${f}" + $${i + 1}`).join(',');
-      const wKeys = Object.keys(where);
-      const sql = `UPDATE "${table}" SET ${set} WHERE ${wKeys.map((k, i) => `"${k}" = $${Object.keys(incs).length + i + 1}`).join(" AND ")}`;
+      const { whereClause, values } = this._buildWhereClause(where);
+      const sql = `UPDATE "${table}" SET ${set} ${whereClause}`;
       const pool = await this._connectionPromise;
-      const res = await pool.query(sql, [...Object.values(incs), ...Object.values(where).map(v => this._serializeValue(v))]);
+      const res = await pool.query(sql, [...Object.values(incs), ...values]);
       return res.rowCount ?? 0;
     });
   }
@@ -176,9 +163,15 @@ export class PostgreSQLDatabase extends IDatabase {
     return (typeof v === 'object' && v !== null) ? JSON.stringify(v) : v;
   }
 
-  private _deserializeValue(v: any): any {
-    // PG automatically handles JSONB, but sometimes manual parsing is safer for consistency
-    return v;
+  private _buildWhereClause(where: Record<string, any> | null): { whereClause: string; values: any[] } {
+    if (!where) return { whereClause: '', values: [] };
+    const safeWhere = where as Record<string, any>;
+    const keys = Object.keys(safeWhere);
+    if (!keys.length) return { whereClause: '', values: [] };
+    return {
+      whereClause: 'WHERE ' + keys.map((k, i) => `"${k}" = $${i + 1}`).join(' AND '),
+      values: keys.map(k => this._serializeValue(safeWhere[k]))
+    };
   }
 }
 

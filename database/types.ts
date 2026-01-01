@@ -1,60 +1,40 @@
-export interface MySQLConfig {
-  host: string;
-  user: string;
-  password?: string;
-  database: string;
-  port?: number;
-  connectionLimit?: number;
+export interface BaseConfig {
   cache?: CacheConfig;
 }
 
-export interface SQLiteConfig {
-  filename: string;
-  cache?: CacheConfig;
-}
-
-export interface MongoDBConfig {
-  uri: string;
-  dbName: string;
-  cache?: CacheConfig;
-}
-
-export interface PostgreSQLConfig {
-  host: string;
-  user: string;
-  password?: string;
-  database: string;
-  port?: number;
-  connectionLimit?: number;
-  cache?: CacheConfig;
-}
-
-export interface RedisConfig {
+export interface NetworkConfig extends BaseConfig {
   host?: string;
   port?: number;
+  username?: string;
   password?: string;
-  db?: number;
+  database?: string;
+  url?: string;
+  poolSize?: number;
+}
+
+export interface FileConfig extends BaseConfig {
+  path: string;
+}
+
+export interface MySQLConfig extends NetworkConfig {}
+export interface PostgreSQLConfig extends NetworkConfig {}
+export interface SQLiteConfig extends FileConfig {}
+export interface MongoDBConfig extends NetworkConfig {}
+export interface RedisConfig extends NetworkConfig {
   keyPrefix?: string;
-  cache?: CacheConfig;
 }
 
-export interface JsonConfig {
-  filePath: string;
+export interface JsonConfig extends FileConfig {
   saveInterval?: number;
-  cache?: CacheConfig;
 }
 
-export interface ZPackConfig {
-  filePath: string;
+export interface ZPackConfig extends FileConfig {
   autoFlush?: boolean;
-  cache?: CacheConfig;
   indexFields?: Record<string, string[]>;
 }
 
-export interface ToonConfig {
-  filePath: string;
+export interface ToonConfig extends FileConfig {
   saveInterval?: number;
-  cache?: CacheConfig;
 }
 
 export interface CacheConfig {

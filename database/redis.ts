@@ -1,21 +1,16 @@
 import { IDatabase } from './IDatabase';
 import { createClient, RedisClientType } from 'redis';
+import { RedisConfig } from './types';
 
 export class RedisDatabase extends IDatabase {
-  private config: any;
+  private config: RedisConfig;
   private client: RedisClientType | null = null;
   private isConnecting: boolean = false;
   private keyPrefix: string;
 
-  constructor(config: any = {}) {
+  constructor(config: RedisConfig) {
     super();
-    this.config = {
-      host: config.host || '127.0.0.1',
-      port: config.port || 6379,
-      password: config.password,
-      db: config.db || 0,
-      connectTimeout: config.connectTimeout || 5000,
-    };
+    this.config = config;
     this.keyPrefix = config.keyPrefix || 'app:';
   }
 
@@ -24,7 +19,7 @@ export class RedisDatabase extends IDatabase {
     const res = await fn();
     this.recordMetric(op, table, Date.now() - start);
     return res;
-  }
+  };
 
   async connect(): Promise<RedisClientType> {
     if (this.client && this.client.isReady) return this.client;
@@ -35,9 +30,10 @@ export class RedisDatabase extends IDatabase {
     this.isConnecting = true;
     try {
       this.client = createClient({
-        socket: { host: this.config.host, port: this.config.port, connectTimeout: this.config.connectTimeout },
+        url: this.config.url,
+        socket: { host: this.config.host || '127.0.0.1', port: this.config.port || 6379 },
         password: this.config.password,
-        database: this.config.db,
+        database: Number(this.config.database) || 0,
       }) as RedisClientType;
       await this.client.connect();
       return this.client;
@@ -83,8 +79,7 @@ export class RedisDatabase extends IDatabase {
       const client = await this.connect();
       for (const item of existing) {
         const merged = { ...item, ...data };
-        const id = String(item._id || item.id);
-        await client.set(this._getKey(table, id), JSON.stringify(merged));
+        await client.set(this._getKey(table, item._id || item.id), JSON.stringify(merged));
       }
       return existing.length;
     });
@@ -114,14 +109,15 @@ export class RedisDatabase extends IDatabase {
   }
 
   async increment(table: string, incs: Record<string, number>, where: Record<string, any> = {}): Promise<number> {
-    const recs = await this.select(table, where);
-    const client = await this.connect();
-    for (const r of recs) {
-      for (const [f, v] of Object.entries(incs)) r[f] = (Number(r[f]) || 0) + v;
-      const id = String(r._id || r.id);
-      await client.set(this._getKey(table, id), JSON.stringify(r));
-    }
-    return recs.length;
+    return this._execute('increment', table, async () => {
+      const recs = await this.select(table, where);
+      const client = await this.connect();
+      for (const r of recs) {
+        for (const [f, v] of Object.entries(incs)) r[f] = (Number(r[f]) || 0) + v;
+        await client.set(this._getKey(table, r._id || r.id), JSON.stringify(r));
+      }
+      return recs.length;
+    });
   }
 
   async decrement(table: string, decs: Record<string, number>, where: Record<string, any> = {}): Promise<number> {

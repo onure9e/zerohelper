@@ -16,9 +16,9 @@ export class JsonDatabase extends IDatabase {
 
   constructor(config: JsonConfig) {
     super();
-    if (!config || !config.filePath) throw new Error('Yapılandırma içinde "filePath" belirtilmelidir.');
-    this.filePath = config.filePath;
-    this.saveInterval = 500;
+    if (!config || !config.path) throw new Error('JsonDB: "path" gereklidir.');
+    this.filePath = config.path;
+    this.saveInterval = config.saveInterval || 500;
     process.on('exit', () => this.flushSync());
     this.initPromise = this._load();
   }
@@ -37,12 +37,8 @@ export class JsonDatabase extends IDatabase {
       const fileContent = await fs.readFile(this.filePath, 'utf-8');
       this.db = JSON.parse(fileContent);
     } catch (error: any) {
-      if (error.code === 'ENOENT') {
-        this.db = {};
-        await this._saveNow();
-      } else {
-        this.db = {};
-      }
+      if (error.code === 'ENOENT') { this.db = {}; await this._saveNow(); }
+      else { this.db = {}; }
     }
   }
 
@@ -60,10 +56,9 @@ export class JsonDatabase extends IDatabase {
     if (item) {
       try {
         const result = item.operation();
-        this.isDirty = true;
-        this._scheduleSave();
+        this.isDirty = true; this._scheduleSave();
         item.resolve(result);
-      } catch (error) { item.reject(error); } 
+      } catch (error) { item.reject(error); }
       finally { this.isWriting = false; this._processQueue(); }
     }
   }
@@ -77,23 +72,17 @@ export class JsonDatabase extends IDatabase {
     if (!this.isDirty) return;
     if (this.saveDebounceTimeout) clearTimeout(this.saveDebounceTimeout);
     this.saveDebounceTimeout = null;
-    try {
-      await fs.writeFile(this.filePath, JSON.stringify(this.db, null, 2));
-      this.isDirty = false;
-    } catch (error) { console.error("Veritabanı dosyasına yazılırken hata:", error); }
+    try { await fs.writeFile(this.filePath, JSON.stringify(this.db, null, 2)); this.isDirty = false; }
+    catch (error) { console.error("JsonDB save error:", error); }
   }
 
   private flushSync(): void {
-    if (this.isDirty) {
-      try { writeFileSync(this.filePath, JSON.stringify(this.db, null, 2)); this.isDirty = false; } catch (error) {}
-    }
+    if (this.isDirty) { try { writeFileSync(this.filePath, JSON.stringify(this.db, null, 2)); this.isDirty = false; } catch (error) { } }
   }
 
   async ensureTable(table: string): Promise<void> {
     await this.initPromise;
-    if (!this.db[table]) {
-      return this._queueRequest(() => { this.db[table] = []; });
-    }
+    if (!this.db[table]) { return this._queueRequest(() => { this.db[table] = []; }); }
   }
 
   async insert(table: string, data: Record<string, any>): Promise<number> {
@@ -118,10 +107,7 @@ export class JsonDatabase extends IDatabase {
       return this._queueRequest(() => {
         let affected = 0;
         this.db[table].forEach(row => {
-          if (Object.keys(where).every(k => row[k] === where[k])) {
-            Object.assign(row, data);
-            affected++;
-          }
+          if (Object.keys(where).every(k => String(row[k]) === String(where[k]))) { Object.assign(row, data); affected++; }
         });
         this.runHooks('afterUpdate', table, { affected });
         return affected;
@@ -135,7 +121,7 @@ export class JsonDatabase extends IDatabase {
       await this.ensureTable(table);
       return this._queueRequest(() => {
         const initial = this.db[table].length;
-        this.db[table] = this.db[table].filter(row => !Object.keys(where).every(k => row[k] === where[k]));
+        this.db[table] = this.db[table].filter(row => !Object.keys(where).every(k => String(row[k]) === String(where[k])));
         const affected = initial - this.db[table].length;
         this.runHooks('afterDelete', table, { affected });
         return affected;
@@ -146,8 +132,8 @@ export class JsonDatabase extends IDatabase {
   async select<T = any>(table: string, where: Record<string, any> | null = null): Promise<T[]> {
     return this._execute('select', table, async () => {
       await this.initPromise;
-      const results = where && Object.keys(where).length > 0 
-        ? (this.db[table] || []).filter(row => Object.keys(where).every(k => row[k] === where[k]))
+      const results = where && Object.keys(where).length > 0
+        ? (this.db[table] || []).filter(row => Object.keys(where).every(k => String(row[k]) === String(where[k])))
         : (this.db[table] || []);
       return JSON.parse(JSON.stringify(results)) as T[];
     });
@@ -181,7 +167,7 @@ export class JsonDatabase extends IDatabase {
       return this._queueRequest(() => {
         let affected = 0;
         this.db[table].forEach(row => {
-          if (Object.keys(where).every(k => row[k] === where[k])) {
+          if (Object.keys(where).every(k => String(row[k]) === String(where[k]))) {
             for (const [f, v] of Object.entries(incs)) row[f] = (Number(row[f]) || 0) + v;
             affected++;
           }

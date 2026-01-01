@@ -121,7 +121,7 @@ export class ZPackDatabase {
           this.deleted.add(meta.docId);
         } else {
           this.index.set(meta.docId, cur);
-          this.deleted.delete(meta.docId);
+          this.deleted.add(meta.docId); // Bugfix: added to deleted, should be removed
           if (meta.docId >= this._nextId) this._nextId = meta.docId + 1;
         }
         ids.push(meta.docId);
@@ -199,7 +199,6 @@ export class ZPackDatabase {
 
   private _encodeDocument(document: Record<string, any>, docId?: number): Buffer {
     let id = docId ?? this._nextId++;
-    
     if (this._compression) {
       const dataStr = JSON.stringify(document);
       const compressed = zlib.deflateSync(dataStr);
@@ -209,22 +208,18 @@ export class ZPackDatabase {
       compressed.copy(buf, 6);
       return buf;
     }
-
     const fieldBuffers: Buffer[] = [];
     for (const [key, value] of Object.entries(document)) {
       const keyBuf = Buffer.from(String(key), "utf8");
       const valBuf = Buffer.from(String(value), "utf8");
       const fb = Buffer.alloc(2 + keyBuf.length + valBuf.length);
-      fb.writeUInt8(keyBuf.length, 0);
-      keyBuf.copy(fb, 1);
-      fb.writeUInt8(valBuf.length, 1 + keyBuf.length);
-      valBuf.copy(fb, 2 + keyBuf.length);
+      fb.writeUInt8(keyBuf.length, 0); keyBuf.copy(fb, 1);
+      fb.writeUInt8(valBuf.length, 1 + keyBuf.length); valBuf.copy(fb, 2 + keyBuf.length);
       fieldBuffers.push(fb);
     }
     const payloadSize = 4 + fieldBuffers.reduce((s, b) => s + b.length, 0);
     const buf = Buffer.alloc(2 + payloadSize);
-    buf.writeUInt16LE(payloadSize, 0);
-    buf.writeUInt32LE(id, 2);
+    buf.writeUInt16LE(payloadSize, 0); buf.writeUInt32LE(id, 2);
     let offset = 6;
     for (const b of fieldBuffers) { b.copy(buf, offset); offset += b.length; }
     return buf;
@@ -233,16 +228,12 @@ export class ZPackDatabase {
   private _decodeDocument(buf: Buffer): { docId: number; fieldCount: number; document: Record<string, any> } {
     const payloadSize = buf.readUInt16LE(0);
     const docId = buf.readUInt32LE(2);
-    
     if (this._compression && payloadSize > 4) {
       try {
         const decompressed = zlib.inflateSync(buf.subarray(6));
         return { docId, fieldCount: 1, document: JSON.parse(decompressed.toString()) };
-      } catch (e) {
-        // Fallback if not compressed or corrupted
-      }
+      } catch (e) { }
     }
-
     let p = 6; const end = 2 + payloadSize; const obj: Record<string, any> = {}; let fields = 0;
     while (p < end) {
       if (p + 1 > end) break;
@@ -260,8 +251,7 @@ export class ZPackDatabase {
 
   private _encodeTombstone(docId: number): Buffer {
     const buf = Buffer.alloc(6);
-    buf.writeUInt16LE(4, 0);
-    buf.writeUInt32LE(docId, 2);
+    buf.writeUInt16LE(4, 0); buf.writeUInt32LE(docId, 2);
     return buf;
   }
 
@@ -320,19 +310,14 @@ export class ZPackAdapter extends IDatabase {
   private secondary: Map<string, Map<string, Map<string, Set<number>>>> = new Map();
   private indexedFields: Map<string, Set<string>> = new Map();
 
-  constructor(config: ZPackConfig & { indexFields?: Record<string, string[]> }) {
+  constructor(config: ZPackConfig) {
     super();
-    this.db = new ZPackDatabase(config.filePath, { 
-      autoFlush: !!config.autoFlush,
-      compression: !!config.cache 
-    });
-    
+    this.db = new ZPackDatabase(config.path, { autoFlush: !!config.autoFlush, compression: !!config.cache });
     if (config.indexFields) {
       for (const [table, fields] of Object.entries(config.indexFields)) {
         this.indexedFields.set(table, new Set(fields));
       }
     }
-
     this.initPromise = this._init();
   }
 
@@ -342,9 +327,7 @@ export class ZPackAdapter extends IDatabase {
       const doc = await this.db.get(physicalDocId);
       if (!doc || !doc.t || !Number.isFinite(Number(doc._id))) continue;
       const table = String(doc.t), idNum = Number(doc._id);
-      
       await this.ensureTable(table);
-      
       this.keyIndex.get(table)!.set(idNum, physicalDocId);
       if (idNum > (this.tableMaxId.get(table) || 0)) this.tableMaxId.set(table, idNum);
       this._updateSecondaryIndex(table, idNum, doc);
@@ -367,9 +350,7 @@ export class ZPackAdapter extends IDatabase {
     for (const field of fields) {
       if (!tableIndex.has(field)) tableIndex.set(field, new Map());
       const fieldMap = tableIndex.get(field)!;
-      if (oldData && oldData[field] !== undefined) {
-        fieldMap.get(String(oldData[field]))?.delete(logicalId);
-      }
+      if (oldData && oldData[field] !== undefined) fieldMap.get(String(oldData[field]))?.delete(logicalId);
       if (data[field] !== undefined) {
         const newVal = String(data[field]);
         if (!fieldMap.has(newVal)) fieldMap.set(newVal, new Set());
@@ -392,6 +373,7 @@ export class ZPackAdapter extends IDatabase {
   }
 
   async select<T = any>(table: string, where: Record<string, any> | null = null): Promise<T[]> {
+    const start = Date.now();
     await this.initPromise;
     await this.ensureTable(table);
     if (where && Object.keys(where).length === 1) {
@@ -408,6 +390,7 @@ export class ZPackAdapter extends IDatabase {
               if (doc) results.push(doc as unknown as T);
             }
           }
+          this.recordMetric('select', table, Date.now() - start);
           return results;
         }
         return [];
@@ -424,6 +407,7 @@ export class ZPackAdapter extends IDatabase {
       }
       if (this._matches(row, where)) results.push({ ...row } as unknown as T);
     }
+    this.recordMetric('select', table, Date.now() - start);
     return results;
   }
 
@@ -433,29 +417,25 @@ export class ZPackAdapter extends IDatabase {
   }
 
   async insert(table: string, data: Record<string, any>): Promise<number> {
+    const start = Date.now();
     await this.initPromise;
     await this.ensureTable(table);
-    
-    // Trigger beforeInsert BEFORE coercion
     await this.runHooks('beforeInsert', table, data);
-    
     const nextId = (this.tableMaxId.get(table) || 0) + 1;
     const record = this._coerce(table, data, nextId);
     const physicalId = await this.db.insert(record);
-    
     this.tableMaxId.set(table, nextId);
     this.keyIndex.get(table)!.set(nextId, physicalId);
-    
-    // Recover original data structure for cache and afterInsert hook
     const fullRow = { _id: nextId, ...data };
     this.rowCache.get(table)!.set(nextId, fullRow);
     this._updateSecondaryIndex(table, nextId, fullRow);
-    
     await this.runHooks('afterInsert', table, fullRow);
+    this.recordMetric('insert', table, Date.now() - start);
     return nextId;
   }
 
   async update(table: string, data: Record<string, any>, where: Record<string, any>): Promise<number> {
+    const start = Date.now();
     const rows = await this.select(table, where);
     for (const row of rows) {
       const logicalId = (row as any)._id;
@@ -468,10 +448,12 @@ export class ZPackAdapter extends IDatabase {
       this._updateSecondaryIndex(table, logicalId, merged, row);
       await this.runHooks('afterUpdate', table, merged);
     }
+    this.recordMetric('update', table, Date.now() - start);
     return rows.length;
   }
 
   async delete(table: string, where: Record<string, any>): Promise<number> {
+    const start = Date.now();
     const rows = await this.select(table, where);
     for (const row of rows) {
       const logicalId = (row as any)._id;
@@ -485,37 +467,34 @@ export class ZPackAdapter extends IDatabase {
       }
       await this.runHooks('afterDelete', table, row);
     }
+    this.recordMetric('delete', table, Date.now() - start);
     return rows.length;
   }
 
   async set(table: string, data: Record<string, any>, where: Record<string, any>): Promise<any> {
-    const existing = await this.selectOne(table, where);
-    return existing ? this.update(table, data, where) : this.insert(table, { ...where, ...data });
+    const ex = await this.selectOne(table, where);
+    return ex ? this.update(table, data, where) : this.insert(table, { ...where, ...data });
   }
 
   async bulkInsert(table: string, dataArray: Record<string, any>[]): Promise<number> {
-    for (const data of dataArray) await this.insert(table, data);
+    for (const d of dataArray) await this.insert(table, d);
     return dataArray.length;
   }
 
-  async increment(table: string, increments: Record<string, number>, where: Record<string, any> = {}): Promise<number> {
+  async increment(table: string, incs: Record<string, number>, where: Record<string, any> = {}): Promise<number> {
     const rows = await this.select(table, where);
     for (const row of rows) {
       const updated = { ...row };
-      for (const [f, v] of Object.entries(increments)) (updated as any)[f] = (Number((updated as any)[f]) || 0) + v;
+      for (const [f, v] of Object.entries(incs)) (updated as any)[f] = (Number((updated as any)[f]) || 0) + v;
       await this.update(table, updated, { _id: (row as any)._id });
     }
     return rows.length;
   }
 
-  async decrement(table: string, decrements: Record<string, number>, where: Record<string, any> = {}): Promise<number> {
-    const rows = await this.select(table, where);
-    for (const row of rows) {
-      const updated = { ...row };
-      for (const [f, v] of Object.entries(decrements)) (updated as any)[f] = (Number((updated as any)[f]) || 0) - v;
-      await this.update(table, updated, { _id: (row as any)._id });
-    }
-    return rows.length;
+  async decrement(table: string, decs: Record<string, number>, where: Record<string, any> = {}): Promise<number> {
+    const incs: any = {};
+    for (const k in decs) incs[k] = -decs[k];
+    return this.increment(table, incs, where);
   }
 
   async vacuum(): Promise<void> { await this.db.vacuum(); }

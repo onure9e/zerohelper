@@ -19,7 +19,7 @@ program.command('init')
   .description('Set up ZeroHelper in your project (Interactive)')
   .action(async () => {
     console.log(chalk.bold.blue('\n🚀 Welcome to ZeroHelper v9.1.0\n'));
-    
+
     const answers = await inquirer.prompt([
       {
         type: 'list',
@@ -42,7 +42,7 @@ program.command('init')
     ]);
 
     const spinner = ora('Generating configuration...').start();
-    
+
     const configTemplate = `
 /**
  * ZeroHelper Configuration
@@ -51,9 +51,9 @@ program.command('init')
 export const zeroConfig = {
   adapter: '${answers.adapter}',
   config: {
-    ${answers.adapter === 'sqlite' || answers.adapter === 'zpack' || answers.adapter === 'json' 
-      ? `filePath: '${answers.path}',\n    filename: '${answers.path}',` 
-      : `host: 'localhost',\n    user: 'root',\n    database: 'zero_db',`}
+    ${answers.adapter === 'sqlite' || answers.adapter === 'zpack' || answers.adapter === 'json'
+        ? `filePath: '${answers.path}',\n    filename: '${answers.path}',`
+        : `host: 'localhost',\n    user: 'root',\n    database: 'zero_db',`}
     ${answers.cache ? `cache: { type: 'memory', ttl: 60000 },` : ''}
   }
 `;
@@ -102,15 +102,15 @@ program.command('zpack:vacuum')
   .action(async (file) => {
     const spinner = ora(`Vacuuming ${file}...`).start();
     const startSize = fs.existsSync(file) ? fs.statSync(file).size : 0;
-    
+
     try {
       const db = database.createDatabase({
         adapter: 'zpack',
-        config: { filePath: file }
+        config: { path: file }
       });
       await (db as any).vacuum();
       await db.close();
-      
+
       const endSize = fs.statSync(file).size;
       spinner.succeed(chalk.green(`Vacuum complete for ${file}`));
       console.log(`${chalk.gray('Original Size:')} ${startSize} bytes`);
@@ -129,9 +129,9 @@ program.command('make:migration')
     const timestamp = Date.now();
     const fileName = `${timestamp}_${name}.ts`;
     const migrationsDir = path.join(process.cwd(), 'migrations');
-    
+
     if (!fs.existsSync(migrationsDir)) fs.mkdirSync(migrationsDir);
-    
+
     const template = `import { IDatabase } from "@onurege3467/zerohelper";
 
 export const up = async (db: IDatabase) => {

@@ -3,12 +3,7 @@ import fs from 'fs/promises';
 import { writeFileSync, existsSync } from 'fs';
 import path from 'path';
 import { stringify, parse } from '../functions/toon';
-
-export interface ToonConfig {
-  filePath: string;
-  saveInterval?: number;
-  cache?: any;
-}
+import { ToonConfig } from './types';
 
 export class ToonDatabase extends IDatabase {
   private filePath: string;
@@ -22,8 +17,8 @@ export class ToonDatabase extends IDatabase {
 
   constructor(config: ToonConfig) {
     super();
-    if (!config || !config.filePath) throw new Error('ToonDB: "filePath" gereklidir.');
-    this.filePath = config.filePath;
+    if (!config || !config.path) throw new Error('ToonDB: "path" gereklidir.');
+    this.filePath = config.path;
     this.saveInterval = config.saveInterval || 500;
     process.on('exit', () => this.flushSync());
     this.initPromise = this._load();
@@ -40,16 +35,10 @@ export class ToonDatabase extends IDatabase {
     try {
       const dir = path.dirname(this.filePath);
       if (!existsSync(dir)) await fs.mkdir(dir, { recursive: true });
-      if (!existsSync(this.filePath)) {
-        this.db = {};
-        await this._saveNow();
-        return;
-      }
+      if (!existsSync(this.filePath)) { this.db = {}; await this._saveNow(); return; }
       const content = await fs.readFile(this.filePath, 'utf-8');
       this.db = parse(content);
-    } catch (error) {
-      this.db = {};
-    }
+    } catch (error) { this.db = {}; }
   }
 
   private _queueRequest<T>(operation: () => T): Promise<T> {
@@ -66,10 +55,9 @@ export class ToonDatabase extends IDatabase {
     if (item) {
       try {
         const result = item.operation();
-        this.isDirty = true;
-        this._scheduleSave();
+        this.isDirty = true; this._scheduleSave();
         item.resolve(result);
-      } catch (error) { item.reject(error); } 
+      } catch (error) { item.reject(error); }
       finally { this.isWriting = false; this._processQueue(); }
     }
   }
@@ -83,24 +71,17 @@ export class ToonDatabase extends IDatabase {
     if (!this.isDirty) return;
     if (this.saveDebounceTimeout) clearTimeout(this.saveDebounceTimeout);
     this.saveDebounceTimeout = null;
-    try {
-      const toonContent = stringify(this.db);
-      await fs.writeFile(this.filePath, toonContent);
-      this.isDirty = false;
-    } catch (error) { console.error("ToonDB save error:", error); }
+    try { await fs.writeFile(this.filePath, stringify(this.db)); this.isDirty = false; }
+    catch (error) { console.error("ToonDB save error:", error); }
   }
 
   private flushSync(): void {
-    if (this.isDirty) {
-      try { writeFileSync(this.filePath, stringify(this.db)); this.isDirty = false; } catch (error) {}
-    }
+    if (this.isDirty) { try { writeFileSync(this.filePath, stringify(this.db)); this.isDirty = false; } catch (error) { } }
   }
 
   async ensureTable(table: string): Promise<void> {
     await this.initPromise;
-    if (!this.db[table]) {
-      return this._queueRequest(() => { this.db[table] = []; });
-    }
+    if (!this.db[table]) { return this._queueRequest(() => { this.db[table] = []; }); }
   }
 
   async insert(table: string, data: Record<string, any>): Promise<number> {
@@ -125,10 +106,7 @@ export class ToonDatabase extends IDatabase {
       return this._queueRequest(() => {
         let affected = 0;
         this.db[table].forEach(row => {
-          if (Object.keys(where).every(k => String(row[k]) === String(where[k]))) {
-            Object.assign(row, data);
-            affected++;
-          }
+          if (Object.keys(where).every(k => String(row[k]) === String(where[k]))) { Object.assign(row, data); affected++; }
         });
         this.runHooks('afterUpdate', table, { affected });
         return affected;
@@ -153,7 +131,7 @@ export class ToonDatabase extends IDatabase {
   async select<T = any>(table: string, where: Record<string, any> | null = null): Promise<T[]> {
     return this._execute('select', table, async () => {
       await this.initPromise;
-      const results = where && Object.keys(where).length > 0 
+      const results = where && Object.keys(where).length > 0
         ? (this.db[table] || []).filter(row => Object.keys(where).every(k => String(row[k]) === String(where[k])))
         : (this.db[table] || []);
       return JSON.parse(JSON.stringify(results)) as T[];

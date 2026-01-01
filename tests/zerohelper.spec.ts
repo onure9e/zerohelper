@@ -54,7 +54,7 @@ describe('ZeroHelper Elite Framework Test Suite', () => {
     test('should rate limit requests', async () => {
       const key = 'test_user';
       const opts = { limit: 2, window: 10 };
-      
+
       const req1 = await functions.security_module.checkRateLimit(key, opts);
       const req2 = await functions.security_module.checkRateLimit(key, opts);
       const req3 = await functions.security_module.checkRateLimit(key, opts);
@@ -66,7 +66,7 @@ describe('ZeroHelper Elite Framework Test Suite', () => {
   });
 
   describe('📊 TOON (Token-Oriented Object Notation)', () => {
-    test('should serialize object to TOON format', () => {
+    test('should stringify object to TOON format', () => {
       const data = { name: "Alice", age: 30 };
       const serialized = functions.toon_module.stringify(data);
       expect(serialized).toContain('name: Alice');
@@ -91,8 +91,8 @@ describe('ZeroHelper Elite Framework Test Suite', () => {
     beforeAll(async () => {
       db = database.createDatabase({
         adapter: 'zpack',
-        config: { 
-          filePath: ZPACK_FILE,
+        config: {
+          path: ZPACK_FILE, // Updated to use 'path'
           autoFlush: true,
           cache: { type: 'memory' }
         }
@@ -118,15 +118,15 @@ describe('ZeroHelper Elite Framework Test Suite', () => {
     test('should handle secondary indexing correctly', async () => {
       const indexedDb = database.createDatabase({
         adapter: 'zpack',
-        config: { 
-          filePath: './indexed.zpack',
+        config: {
+          path: './indexed.zpack', // Updated to use 'path'
           indexFields: { 'products': ['sku'] }
         }
       });
 
       await indexedDb.insert('products', { name: 'Keyboard', sku: 'KBD-001' });
       const found = await indexedDb.selectOne('products', { sku: 'KBD-001' });
-      
+
       expect(found.name).toBe('Keyboard');
       await indexedDb.close();
       if (fs.existsSync('./indexed.zpack')) fs.unlinkSync('./indexed.zpack');
@@ -147,13 +147,13 @@ describe('ZeroHelper Elite Framework Test Suite', () => {
 
     test('should vacuum the database', async () => {
       const ids = [];
-      for(let i=0; i<10; i++) ids.push(await db.insert('tmp', { d: 'x'.repeat(100) }));
-      for(const id of ids) await db.delete('tmp', { _id: id });
-      
+      for (let i = 0; i < 10; i++) ids.push(await db.insert('tmp', { d: 'x'.repeat(100) }));
+      for (const id of ids) await db.delete('tmp', { _id: id });
+
       const sizeBefore = fs.statSync(ZPACK_FILE).size;
       await db.vacuum();
       const sizeAfter = fs.statSync(ZPACK_FILE).size;
-      
+
       expect(sizeAfter).toBeLessThan(sizeBefore);
     });
 
@@ -169,24 +169,20 @@ describe('ZeroHelper Elite Framework Test Suite', () => {
     beforeAll(() => {
       tdb = database.createDatabase({
         adapter: 'toon',
-        config: { filePath: TOON_FILE }
+        config: { path: TOON_FILE } // Updated to use 'path'
       });
     });
 
     test('should insert and select data in TOON format', async () => {
       const id = await tdb.insert('orders', { product: 'Elite Laptop', price: 2500 });
       await tdb.insert('orders', { product: 'Mechanical Keyboard', price: 150 });
-      
       const order = await tdb.selectOne('orders', { _id: id });
-      
+
       expect(id).toBeDefined();
       expect(order.product).toBe('Elite Laptop');
-      
-      // Wait for async flush
+
       await new Promise(r => setTimeout(r, 600));
-      
       const content = fs.readFileSync(TOON_FILE, 'utf-8');
-      // With 2 items, it should trigger tabular format with key separator
       expect(content).toContain('orders: [2]{_id,product,price}:');
     });
 
@@ -200,9 +196,9 @@ describe('ZeroHelper Elite Framework Test Suite', () => {
     test('should seed mock data based on schema', async () => {
       const seederDb = database.createDatabase({
         adapter: 'json',
-        config: { filePath: './seed_test.json' }
+        config: { path: './seed_test.json' } // Updated to use 'path'
       });
-      
+
       const seeder = new database.DataSeeder(seederDb);
       const count = await seeder.seed('test_table', 5, {
         email: { type: 'email' },
@@ -214,7 +210,7 @@ describe('ZeroHelper Elite Framework Test Suite', () => {
       expect(count).toBe(5);
       expect(rows.length).toBe(5);
       expect(rows[0].email).toContain('@');
-      
+
       await seederDb.close();
       if (fs.existsSync('./seed_test.json')) fs.unlinkSync('./seed_test.json');
     });

@@ -118,7 +118,7 @@ export function filterObjectByKey<T extends object>(obj: T, keys: string[]): Par
 export function deepMerge(obj1: any, obj2: any): any {
   const isObject = (obj: any) => obj && typeof obj === "object";
   return Object.keys({ ...obj1, ...obj2 }).reduce((result, key) => {
-    result[key] = 
+    result[key] =
       isObject(obj1[key]) && isObject(obj2[key])
         ? deepMerge(obj1[key], obj2[key])
         : obj2[key] ?? obj1[key];
@@ -387,10 +387,10 @@ export function sanitizeHTML(html: string): string {
 export function validateCreditCard(cardNumber: string): boolean {
   const cleanNumber = cardNumber.replace(/\D/g, '');
   if (cleanNumber.length < 13 || cleanNumber.length > 19) return false;
-  
+
   let sum = 0;
   let isEven = false;
-  
+
   for (let i = cleanNumber.length - 1; i >= 0; i--) {
     let digit = parseInt(cleanNumber[i]);
     if (isEven) {
@@ -400,7 +400,7 @@ export function validateCreditCard(cardNumber: string): boolean {
     sum += digit;
     isEven = !isEven;
   }
-  
+
   return sum % 10 === 0;
 }
 
@@ -418,15 +418,15 @@ export interface ValidationSchema {
 
 export function validateSchema(data: any, schema: ValidationSchema): { isValid: boolean; errors: string[] } {
   const errors: string[] = [];
-  
+
   for (const [key, rules] of Object.entries(schema)) {
     const value = data[key];
-    
+
     if (rules.required && (value === undefined || value === null || value === '')) {
       errors.push(`${key} alanı zorunludur`);
       continue;
     }
-    
+
     if (value !== undefined && value !== null) {
       if (rules.type && typeof value !== rules.type) {
         errors.push(`${key} alanı ${rules.type} tipinde olmalıdır`);
@@ -448,7 +448,7 @@ export function validateSchema(data: any, schema: ValidationSchema): { isValid: 
       }
     }
   }
-  
+
   return {
     isValid: errors.length === 0,
     errors
@@ -457,7 +457,7 @@ export function validateSchema(data: any, schema: ValidationSchema): { isValid: 
 
 export function sanitizeInput(input: any, options: { trim?: boolean; removeHTML?: boolean; escape?: boolean } = {}): any {
   if (typeof input !== 'string') return input;
-  
+
   let sanitized = input;
   if (options.trim !== false) {
     sanitized = sanitized.trim();
@@ -493,7 +493,7 @@ export class Logger {
   private logFile: string | null;
   private levels: Record<LogLevel, number> = {
     error: 0,
-    warn: 1, 
+    warn: 1,
     info: 2,
     debug: 3
   };
@@ -546,7 +546,7 @@ export class Logger {
     }
   }
 
-  log(level: LogLevel, message: string, data?: any): void { 
+  log(level: LogLevel, message: string, data?: any): void {
     if (!this.shouldLog(level)) return;
     const formatted = this.formatMessage(level, message, data);
     if (level === 'error') {

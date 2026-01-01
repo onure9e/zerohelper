@@ -9,10 +9,10 @@ export class SQLiteDatabase extends IDatabase {
 
   constructor(config: SQLiteConfig) {
     super();
-    if (!config || !config.filename) throw new Error('SQLite "filename" gereklidir.');
-    const dir = path.dirname(config.filename);
+    if (!config || !config.path) throw new Error('SQLite "path" gereklidir.');
+    const dir = path.dirname(config.path);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    this.db = new sqlite3.Database(config.filename);
+    this.db = new sqlite3.Database(config.path);
   }
 
   private async _execute<T>(op: string, table: string, fn: () => Promise<T>): Promise<T> {
@@ -20,7 +20,7 @@ export class SQLiteDatabase extends IDatabase {
     const res = await fn();
     this.recordMetric(op, table, Date.now() - start);
     return res;
-  }
+  };
 
   async query(sql: string, params: any[] = []): Promise<any> {
     return new Promise((resolve, reject) => {
@@ -28,31 +28,24 @@ export class SQLiteDatabase extends IDatabase {
       if (s.startsWith('SELECT') || s.startsWith('PRAGMA')) {
         this.db.all(sql, params, (err, rows) => err ? reject(err) : resolve(rows));
       } else {
-        this.db.run(sql, params, function(err) { err ? reject(err) : resolve({ changes: this.changes, lastID: this.lastID }); });
+        this.db.run(sql, params, function (err) { err ? reject(err) : resolve({ changes: this.changes, lastID: this.lastID }); });
       }
     });
   }
 
-  /**
-   * SQLite dynamically adds missing columns using ALTER TABLE.
-   */
-  private async _ensureMissingColumns(table: string, data: Record<string, any>): Promise<void> {
-    const info: any[] = await this.query(`PRAGMA table_info("${table}")`);
-    const names = info.map(c => c.name);
-    for (const key of Object.keys(data)) {
-      if (key !== '_id' && !names.includes(key)) {
-        await this.query(`ALTER TABLE "${table}" ADD COLUMN "${key}" TEXT`);
-      }
-    }
-  }
-
   async ensureTable(table: string, data: any = {}): Promise<void> {
-    try { 
-      await this.query(`SELECT 1 FROM "${table}" LIMIT 1`); 
-      await this._ensureMissingColumns(table, data);
+    try {
+      await this.query(`SELECT 1 FROM "${table}" LIMIT 1`);
+      const info: any[] = await this.query(`PRAGMA table_info("${table}")`);
+      const names = info.map(c => c.name);
+      for (const key of Object.keys(data)) {
+        if (key !== '_id' && !names.includes(key)) {
+          await this.query(`ALTER TABLE "${table}" ADD COLUMN "${key}" TEXT`);
+        }
+      }
     } catch {
       const defs = Object.keys(data).map(k => `"${k}" TEXT`);
-      await this.query(`CREATE TABLE "${table}" (_id INTEGER PRIMARY KEY AUTOINCREMENT ${defs.length ? ', '+defs.join(',') : ''})`);
+      await this.query(`CREATE TABLE "${table}" (_id INTEGER PRIMARY KEY AUTOINCREMENT ${defs.length ? ', ' + defs.join(',') : ''})`);
     }
   }
 
@@ -61,8 +54,8 @@ export class SQLiteDatabase extends IDatabase {
     return this._execute('insert', table, async () => {
       await this.ensureTable(table, data);
       const keys = Object.keys(data);
-      const sql = `INSERT INTO "${table}" (${keys.map(k => `"${k}"`).join(',')}) VALUES (${keys.map(()=>'?').join(',')})`;
-      const res = await this.query(sql, Object.values(data).map(v => JSON.stringify(v)));
+      const sql = `INSERT INTO "${table}" (${keys.map(k => `"${k}"`).join(',')}) VALUES (${keys.map(() => '?').join(',')})`;
+      const res = await this.query(sql, Object.values(data).map(v => typeof v === 'object' ? JSON.stringify(v) : v));
       const finalData = { _id: res.lastID, ...data };
       await this.runHooks('afterInsert', table, finalData);
       return res.lastID;
@@ -74,9 +67,9 @@ export class SQLiteDatabase extends IDatabase {
     return this._execute('update', table, async () => {
       await this.ensureTable(table, { ...data, ...where });
       const set = Object.keys(data).map(k => `"${k}" = ?`).join(',');
-      const keys = Object.keys(where);
-      const sql = `UPDATE "${table}" SET ${set} WHERE ${keys.map(k => `"${k}" = ?`).join(' AND ')}`;
-      const res = await this.query(sql, [...Object.values(data).map(v => JSON.stringify(v)), ...Object.values(where).map(v => JSON.stringify(v))]);
+      const { whereClause, values: whereValues } = this._buildWhereClause(where);
+      const sql = `UPDATE "${table}" SET ${set} ${whereClause}`;
+      const res = await this.query(sql, [...Object.values(data).map(v => typeof v === 'object' ? JSON.stringify(v) : v), ...whereValues]);
       return res.changes;
     });
   }
@@ -85,9 +78,9 @@ export class SQLiteDatabase extends IDatabase {
     await this.runHooks('beforeDelete', table, where);
     return this._execute('delete', table, async () => {
       await this.ensureTable(table, where);
-      const keys = Object.keys(where);
-      const sql = `DELETE FROM "${table}" WHERE ${keys.map(k => `"${k}" = ?`).join(' AND ')}`;
-      const res = await this.query(sql, Object.values(where).map(v => JSON.stringify(v)));
+      const { whereClause, values } = this._buildWhereClause(where);
+      const sql = `DELETE FROM "${table}" ${whereClause}`;
+      const res = await this.query(sql, values);
       return res.changes;
     });
   }
@@ -95,16 +88,12 @@ export class SQLiteDatabase extends IDatabase {
   async select<T = any>(table: string, where: any = null): Promise<T[]> {
     return this._execute('select', table, async () => {
       await this.ensureTable(table, where || {});
-      const keys = where ? Object.keys(where) : [];
-      const sql = `SELECT * FROM "${table}"` + (keys.length ? ` WHERE ${keys.map(k => `"${k}" = ?`).join(' AND ')}` : '');
-      const rows = await this.query(sql, keys.map(k => JSON.stringify(where[k])));
+      const { whereClause, values } = this._buildWhereClause(where);
+      const rows = await this.query(`SELECT * FROM "${table}" ${whereClause}`, values);
       return rows.map((r: any) => {
         const nr: any = {};
-        for (const k in r) { try { nr[k] = JSON.parse(r[k]); } catch { nr[nr[k] = r[k]]; } }
-        const { _id, ...rest } = r; // Handle _id vs id
-        const finalObj: any = { _id };
-        for (const k in rest) { try { finalObj[k] = JSON.parse(rest[k]); } catch { finalObj[k] = rest[k]; } }
-        return finalObj as T;
+        for (const k in r) { try { nr[k] = JSON.parse(r[k]); } catch { nr[k] = r[k]; } }
+        return nr as T;
       });
     });
   }
@@ -128,10 +117,10 @@ export class SQLiteDatabase extends IDatabase {
   async increment(table: string, incs: any, where: any): Promise<number> {
     return this._execute('increment', table, async () => {
       await this.ensureTable(table, where);
-      const set = Object.keys(incs).map(f => `"${f}" = CAST("${f}" AS SKIP_CAST) + ?`.replace('SKIP_CAST', 'NUMERIC'));
-      const keys = Object.keys(where);
-      const sql = `UPDATE "${table}" SET ${set} WHERE ${keys.map(k => `"${k}" = ?`).join(' AND ')}`;
-      const res = await this.query(sql, [...Object.values(incs), ...Object.values(where).map(v => JSON.stringify(v))]);
+      const set = Object.keys(incs).map(f => `"${f}" = CAST("${f}" AS NUMERIC) + ?`);
+      const { whereClause, values } = this._buildWhereClause(where);
+      const sql = `UPDATE "${table}" SET ${set} ${whereClause}`;
+      const res = await this.query(sql, [...Object.values(incs), ...values]);
       return res.changes;
     });
   }
@@ -143,6 +132,22 @@ export class SQLiteDatabase extends IDatabase {
   }
 
   async close(): Promise<void> { return new Promise((resolve, reject) => this.db.close(err => err ? reject(err) : resolve())); }
+
+  private _serializeValue(v: any): any {
+    if (v instanceof Date) return v.toISOString().slice(0, 19).replace('T', ' ');
+    return (typeof v === 'object' && v !== null) ? JSON.stringify(v) : v;
+  }
+
+  private _buildWhereClause(where: Record<string, any> | null): { whereClause: string; values: any[] } {
+    if (!where) return { whereClause: '', values: [] };
+    const safeWhere = where as Record<string, any>;
+    const keys = Object.keys(safeWhere);
+    if (!keys.length) return { whereClause: '', values: [] };
+    return {
+      whereClause: 'WHERE ' + keys.map(k => `"${k}" = ?`).join(' AND '),
+      values: keys.map(k => this._serializeValue(safeWhere[k]))
+    };
+  }
 }
 
 export default SQLiteDatabase;
