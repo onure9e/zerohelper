@@ -1,0 +1,10 @@
+node_modules/
+dist/
+*.log
+.env
+test-db.json
+test_data.zpack
+*.sqlite
+.vscode/
+.idea/
+.DS_Store

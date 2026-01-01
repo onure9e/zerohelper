@@ -1,0 +1,20 @@
+# Exclude source files
+database/
+functions/
+index.ts
+test.ts
+test_zpack.ts
+test.zpack.spec.js
+bench.10m.zpack.js
+tsconfig.json
+.gitignore
+.snapshots/
+
+# Include build artifacts
+dist/
+
+# Exclude local data
+*.json
+*.zpack
+*.sqlite
+*.log

@@ -1,10 +1,17 @@
 {
   "name": "@onurege3467/zerohelper",
-  "version": "5.0.2",
-  "main": "index.js",
+  "version": "9.0.0",
+  "description": "ZeroHelper is a versatile high-performance utility library and database framework for Node.js, fully written in TypeScript.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "scripts": {
-    "test": "node test.js"
+    "build": "tsc",
+    "prepublishOnly": "npm run build",
+    "test": "node test.zpack.spec.js"
   },
+  "files": [
+    "dist"
+  ],
   "keywords": [
     "helper",
     "zerohelper",
@@ -16,17 +23,21 @@
     "sqlite3",
     "quick.db",
     "postgresql",
-    "redis",
     "utility",
     "functions",
-    "nodejs"
+    "nodejs",
+    "validation",
+    "logger",
+    "migration",
+    "increment",
+    "decrement",
+    "zpack",
+    "typescript"
   ],
   "author": "Onure9e",
   "license": "ISC",
-  "description": "ZeroHelper is a versatile JavaScript library offering helper functions and database utilities for developers. It supports MongoDB, MySQL, SQLite, Redis, and PostgreSQL.",
   "dependencies": {
     "bcrypt": "^5.1.1",
-    "better-sqlite3": "^11.10.0",
     "crypto": "^1.0.1",
     "csv": "^6.3.11",
     "dotenv": "^16.4.7",
@@ -34,6 +45,7 @@
     "js-yaml": "^4.1.0",
     "jsonwebtoken": "^9.0.2",
     "lodash": "^4.17.21",
+    "lru-cache": "^10.0.0",
     "mongodb": "^6.12.0",
     "mysql2": "^3.14.1",
     "path": "^0.12.7",
@@ -41,5 +53,14 @@
     "promise-mysql": "^5.2.0",
     "redis": "^4.7.0",
     "sqlite3": "^5.1.7"
+  },
+  "devDependencies": {
+    "@types/bcrypt": "^5.0.2",
+    "@types/js-yaml": "^4.0.9",
+    "@types/jsonwebtoken": "^9.0.7",
+    "@types/lodash": "^4.17.13",
+    "@types/node": "^22.10.2",
+    "@types/pg": "^8.11.10",
+    "typescript": "^5.7.2"
   }
 }
