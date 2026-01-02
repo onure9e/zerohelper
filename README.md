@@ -1,4 +1,4 @@
-# 🚀 ZeroHelper v9.1.0 - The Ultimate Elite Node.js Utility & Database Framework
+# 🚀 ZeroHelper - The Ultimate Elite Node.js Utility & Database Framework
 
 [![Version](https://img.shields.io/npm/v/@onurege3467/zerohelper?style=for-the-badge)](https://www.npmjs.com/package/@onurege3467/zerohelper)
 [![TypeScript](https://img.shields.io/badge/TypeScript-Ready-blue?style=for-the-badge&logo=typescript)](https://www.typescriptlang.org/)
