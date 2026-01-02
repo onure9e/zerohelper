@@ -34,14 +34,20 @@ ${config.database}
           password: config.password,
           database: config.database,
           waitForConnections: true,
-          connectionLimit: config.poolSize || 10,
+          connectionLimit: config.poolSize || 15, // Balanced limit
           queueLimit: 0,
+          enableKeepAlive: true,
+          keepAliveInitialDelay: 10000
         });
 
         this._connected = true;
         resolve(this.pool);
         this._processQueue();
-      } catch (error) { reject(error); }
+      } catch (error) {
+        this._queue.forEach(q => q.reject(error));
+        this._queue = [];
+        reject(error);
+      }
     });
   }
 
@@ -66,8 +72,20 @@ ${config.database}
 
   async query(sql: string, params: any[] = []): Promise<any> {
     const pool = await this._connectionPromise;
-    const [rows] = await pool.execute(sql, params);
-    return rows;
+    let retries = 3;
+    while (retries > 0) {
+      try {
+        const [rows] = await pool.execute(sql, params);
+        return rows;
+      } catch (error: any) {
+        if ((error.code === 'ER_CON_COUNT_ERROR' || error.message.includes('Too many connections')) && retries > 1) {
+          retries--;
+          await new Promise(r => setTimeout(r, 1000)); // Wait 1s and retry
+          continue;
+        }
+        throw error;
+      }
+    }
   }
 
   private async _ensureMissingColumns(table: string, data: Record<string, any>): Promise<void> {
@@ -142,11 +160,12 @@ ${k}
     return this._execute('delete', table, async () => {
       await this.ensureTable(table, where);
       const keys = Object.keys(where);
+      const whereClause = keys.length > 0 ? `WHERE ${keys.map(k => `
+${k}
+ = ?`).join(" AND ")}` : '';
       const sql = `DELETE FROM
 ${table}
- WHERE ${keys.map(k => `
-${k}
- = ?`).join(" AND ")}`;
+ ${whereClause}`;
       const result = await this.query(sql, Object.values(where).map(v => typeof v === 'object' ? JSON.stringify(v) : v));
       return result.affectedRows;
     });

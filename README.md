@@ -75,7 +75,7 @@ import { database } from '@onurege3467/zerohelper';
 const db = database.createDatabase({
   adapter: 'zpack',
   config: {
-    filePath: './data.zpack',
+    path: './data.zpack',
     indexFields: { 'users': ['email'] }, // Intelligent autocomplete for ZPack
     autoFlush: true
   }
@@ -136,7 +136,7 @@ await db.decrement('inventory', { stock: 1 }, { sku: 'PRO-123' });
 ```typescript
 const zpack = database.createDatabase({
   adapter: 'zpack',
-  config: { filePath: './storage/engine.zpack', autoFlush: true }
+  config: { path: './storage/engine.zpack', autoFlush: true }
 });
 ```
 
@@ -151,7 +151,7 @@ The **world's first native TOON database**. It stores data in a YAML-like compac
 const toonDb = database.createDatabase({
   adapter: 'toon',
   config: {
-    filePath: './data.toon',
+    path: './data.toon',
     saveInterval: 1000 // Debounced disk write for high performance
   }
 });

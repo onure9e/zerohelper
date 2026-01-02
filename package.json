@@ -1,6 +1,6 @@
 {
   "name": "@onurege3467/zerohelper",
-  "version": "9.2.0",
+  "version": "10.0.0",
   "description": "ZeroHelper is a versatile high-performance utility library and database framework for Node.js, fully written in TypeScript.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

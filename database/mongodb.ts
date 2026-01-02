@@ -1,89 +1,107 @@
 import { IDatabase } from './IDatabase';
-import { MongoClient, Db } from "mongodb";
+import { MongoClient, Db, ObjectId } from "mongodb";
 import { MongoDBConfig } from './types';
 
 export class MongoDBDatabase extends IDatabase {
-  private config: MongoDBConfig;
   private client: MongoClient;
   private db: Db | null = null;
+  private _isConnected: boolean = false;
   private _queue: Array<{ operation: () => Promise<any>; resolve: (val: any) => void; reject: (err: any) => void }> = [];
-  private _connected: boolean = false;
-  private _connectionPromise: Promise<Db>;
 
   constructor(config: MongoDBConfig) {
     super();
-    this.config = config;
-    this.client = new MongoClient(config.url || `mongodb://${config.host || 'localhost'}:${config.port || 27017}`);
-    this._connectionPromise = new Promise(async (resolve, reject) => {
-      try {
-        await this.client.connect();
-        this.db = this.client.db(config.database || 'test');
-        this._connected = true;
-        resolve(this.db);
-        this._processQueue();
-      } catch (error) { reject(error); }
+    const uri = config.url || (config.uri ?? `mongodb://${config.host || 'localhost'}:${config.port || 27017}`);
+
+    this.client = new MongoClient(uri, {
+      serverSelectionTimeoutMS: 5000, // Fail fast if no server
+      connectTimeoutMS: 5000
     });
+
+    this._connect(config.database || 'test');
   }
 
-  private async _execute<T>(op: string, table: string, fn: () => Promise<T>): Promise<T> {
-    const start = Date.now();
-    const execute = async () => {
-      const res = await fn();
-      this.recordMetric(op, table, Date.now() - start);
-      return res;
-    };
-    if (this._connected) return execute();
-    return new Promise((resolve, reject) => this._queue.push({ operation: execute, resolve, reject }));
-  }
-
-  private async _processQueue(): Promise<void> {
-    if (!this._connected) return;
-    while (this._queue.length > 0) {
-      const item = this._queue.shift();
-      if (item) { try { item.resolve(await item.operation()); } catch (error) { item.reject(error); } }
+  private async _connect(dbName: string) {
+    try {
+      await this.client.connect();
+      this.db = this.client.db(dbName);
+      this._isConnected = true;
+      this._flushQueue();
+    } catch (error) {
+      this._flushQueueWithError(error);
+      // Opsiyonel: Yeniden bağlanma mantığı buraya eklenebilir,
+      // ama testler için fail-fast daha iyidir.
     }
   }
 
-  async insert(collection: string, data: any): Promise<any> {
+  private _flushQueue() {
+    while (this._queue.length > 0) {
+      const item = this._queue.shift();
+      if (item) {
+        item.operation().then(item.resolve).catch(item.reject);
+      }
+    }
+  }
+
+  private _flushQueueWithError(error: any) {
+    while (this._queue.length > 0) {
+      const item = this._queue.shift();
+      if (item) item.reject(error);
+    }
+  }
+
+  private async _execute<T>(fn: () => Promise<T>): Promise<T> {
+    if (this._isConnected) {
+      return fn();
+    }
+    return new Promise((resolve, reject) => {
+      this._queue.push({ operation: fn, resolve, reject });
+    });
+  }
+
+  // --- Implementations ---
+
+  async insert(collection: string, data: any): Promise<string> {
     await this.runHooks('beforeInsert', collection, data);
-    return this._execute('insert', collection, async () => {
-      const db = await this._connectionPromise;
-      const res = await db.collection(collection).insertOne(data);
-      const finalData = { _id: res.insertedId, ...data };
+    return this._execute(async () => {
+      const res = await this.db!.collection(collection).insertOne(data);
+      const newId = res.insertedId.toString();
+      const finalData = { _id: newId, ...data };
       await this.runHooks('afterInsert', collection, finalData);
-      return res.insertedId;
+      return newId;
     });
   }
 
   async update(collection: string, data: any, where: any): Promise<number> {
     await this.runHooks('beforeUpdate', collection, { data, where });
-    return this._execute('update', collection, async () => {
-      const db = await this._connectionPromise;
-      const res = await db.collection(collection).updateMany(where, { $set: data });
-      return Number(res.modifiedCount);
+    const formattedWhere = this._formatQuery(where);
+    return this._execute(async () => {
+      const res = await this.db!.collection(collection).updateMany(formattedWhere, { $set: data });
+      return res.modifiedCount;
     });
   }
 
   async delete(collection: string, where: any): Promise<number> {
     await this.runHooks('beforeDelete', collection, where);
-    return this._execute('delete', collection, async () => {
-      const db = await this._connectionPromise;
-      const res = await db.collection(collection).deleteMany(where);
+    const formattedWhere = this._formatQuery(where);
+    return this._execute(async () => {
+      const res = await this.db!.collection(collection).deleteMany(formattedWhere);
       return res.deletedCount;
     });
   }
 
   async select<T = any>(collection: string, where: any = {}): Promise<T[]> {
-    return this._execute('select', collection, async () => {
-      const db = await this._connectionPromise;
-      return await db.collection(collection).find(where).toArray() as unknown as T[];
+    const formattedWhere = this._formatQuery(where);
+    return this._execute(async () => {
+      const docs = await this.db!.collection(collection).find(formattedWhere).toArray();
+      return docs.map(doc => this._serialize(doc)) as T[];
     });
   }
 
   async selectOne<T = any>(collection: string, where: any = {}): Promise<T | null> {
-    return this._execute('selectOne', collection, async () => {
-      const db = await this._connectionPromise;
-      return await db.collection(collection).findOne(where) as unknown as T | null;
+    const formattedWhere = this._formatQuery(where);
+    return this._execute(async () => {
+      const doc = await this.db!.collection(collection).findOne(formattedWhere);
+      return doc ? this._serialize(doc) as T : null;
     });
   }
 
@@ -93,19 +111,18 @@ export class MongoDBDatabase extends IDatabase {
   }
 
   async bulkInsert(collection: string, dataArray: any[]): Promise<number> {
-    return this._execute('bulkInsert', collection, async () => {
-      if (!dataArray.length) return 0;
-      const db = await this._connectionPromise;
-      const res = await db.collection(collection).insertMany(dataArray);
+    if (!dataArray.length) return 0;
+    return this._execute(async () => {
+      const res = await this.db!.collection(collection).insertMany(dataArray);
       return res.insertedCount;
     });
   }
 
   async increment(collection: string, incs: Record<string, number>, where: any = {}): Promise<number> {
-    return this._execute('increment', collection, async () => {
-      const db = await this._connectionPromise;
-      const res = await db.collection(collection).updateMany(where, { $inc: incs });
-      return Number(res.modifiedCount);
+    const formattedWhere = this._formatQuery(where);
+    return this._execute(async () => {
+      const res = await this.db!.collection(collection).updateMany(formattedWhere, { $inc: incs });
+      return res.modifiedCount;
     });
   }
 
@@ -115,7 +132,27 @@ export class MongoDBDatabase extends IDatabase {
     return this.increment(collection, incs, where);
   }
 
-  async close(): Promise<void> { await this.client.close(); }
+  async close(): Promise<void> {
+    if (this.client) await this.client.close();
+    this._isConnected = false;
+  }
+
+  // Helper: _id handling and query formatting
+  private _formatQuery(where: any): any {
+    if (!where) return {};
+    const query: any = { ...where };
+    if (query._id && typeof query._id === 'string' && ObjectId.isValid(query._id)) {
+      query._id = new ObjectId(query._id);
+    }
+    return query;
+  }
+
+  private _serialize(doc: any): any {
+    if (!doc) return doc;
+    const { _id, ...rest } = doc;
+    // _id'yi string olarak döndür, ZeroHelper standardı
+    return { _id: _id.toString(), ...rest };
+  }
 }
 
 export default MongoDBDatabase;

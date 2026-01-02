@@ -35,10 +35,34 @@ export class ToonDatabase extends IDatabase {
     try {
       const dir = path.dirname(this.filePath);
       if (!existsSync(dir)) await fs.mkdir(dir, { recursive: true });
-      if (!existsSync(this.filePath)) { this.db = {}; await this._saveNow(); return; }
+      if (!existsSync(this.filePath)) {
+        this.db = {};
+        await this._saveNow();
+        return;
+      }
       const content = await fs.readFile(this.filePath, 'utf-8');
-      this.db = parse(content);
-    } catch (error) { this.db = {}; }
+      const parsed = parse(content);
+
+      // ✅ Parse sonucunu doğrula
+      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+        this.db = {};
+      } else {
+        this.db = {};
+        // Her tablonun array olduğundan emin ol
+        for (const [key, value] of Object.entries(parsed)) {
+          this.db[key] = Array.isArray(value) ? value : [];
+        }
+      }
+    } catch (error) {
+      console.error("ToonDB load error:", error);
+      this.db = {};
+    }
+  }
+
+  private _getTable(table: string): any[] {
+    // ✅ Her zaman array döndüren yardımcı fonksiyon
+    const data = this.db[table];
+    return Array.isArray(data) ? data : [];
   }
 
   private _queueRequest<T>(operation: () => T): Promise<T> {
@@ -55,10 +79,15 @@ export class ToonDatabase extends IDatabase {
     if (item) {
       try {
         const result = item.operation();
-        this.isDirty = true; this._scheduleSave();
+        this.isDirty = true;
+        this._scheduleSave();
         item.resolve(result);
-      } catch (error) { item.reject(error); }
-      finally { this.isWriting = false; this._processQueue(); }
+      } catch (error) {
+        item.reject(error);
+      } finally {
+        this.isWriting = false;
+        this._processQueue();
+      }
     }
   }
 
@@ -71,17 +100,31 @@ export class ToonDatabase extends IDatabase {
     if (!this.isDirty) return;
     if (this.saveDebounceTimeout) clearTimeout(this.saveDebounceTimeout);
     this.saveDebounceTimeout = null;
-    try { await fs.writeFile(this.filePath, stringify(this.db)); this.isDirty = false; }
-    catch (error) { console.error("ToonDB save error:", error); }
+    try {
+      await fs.writeFile(this.filePath, stringify(this.db));
+      this.isDirty = false;
+    } catch (error) {
+      console.error("ToonDB save error:", error);
+    }
   }
 
   private flushSync(): void {
-    if (this.isDirty) { try { writeFileSync(this.filePath, stringify(this.db)); this.isDirty = false; } catch (error) { } }
+    if (this.isDirty) {
+      try {
+        writeFileSync(this.filePath, stringify(this.db));
+        this.isDirty = false;
+      } catch (error) { }
+    }
   }
 
   async ensureTable(table: string): Promise<void> {
     await this.initPromise;
-    if (!this.db[table]) { return this._queueRequest(() => { this.db[table] = []; }); }
+    // ✅ Tablonun array olduğundan emin ol
+    if (!Array.isArray(this.db[table])) {
+      return this._queueRequest(() => {
+        this.db[table] = [];
+      });
+    }
   }
 
   async insert(table: string, data: Record<string, any>): Promise<number> {
@@ -89,7 +132,8 @@ export class ToonDatabase extends IDatabase {
     return this._execute('insert', table, async () => {
       await this.ensureTable(table);
       return this._queueRequest(() => {
-        const maxId = this.db[table].reduce((max, row) => (row._id > max ? row._id : max), 0);
+        const tableData = this._getTable(table);
+        const maxId = tableData.reduce((max, row) => (row._id > max ? row._id : max), 0);
         const newId = maxId + 1;
         const newRow = { _id: newId, ...data };
         this.db[table].push(newRow);
@@ -105,8 +149,12 @@ export class ToonDatabase extends IDatabase {
       await this.ensureTable(table);
       return this._queueRequest(() => {
         let affected = 0;
-        this.db[table].forEach(row => {
-          if (Object.keys(where).every(k => String(row[k]) === String(where[k]))) { Object.assign(row, data); affected++; }
+        const tableData = this._getTable(table);
+        tableData.forEach(row => {
+          if (Object.keys(where).every(k => String(row[k]) === String(where[k]))) {
+            Object.assign(row, data);
+            affected++;
+          }
         });
         this.runHooks('afterUpdate', table, { affected });
         return affected;
@@ -119,8 +167,11 @@ export class ToonDatabase extends IDatabase {
     return this._execute('delete', table, async () => {
       await this.ensureTable(table);
       return this._queueRequest(() => {
-        const initial = this.db[table].length;
-        this.db[table] = this.db[table].filter(row => !Object.keys(where).every(k => String(row[k]) === String(where[k])));
+        const tableData = this._getTable(table);
+        const initial = tableData.length;
+        this.db[table] = tableData.filter(row =>
+          !Object.keys(where).every(k => String(row[k]) === String(where[k]))
+        );
         const affected = initial - this.db[table].length;
         this.runHooks('afterDelete', table, { affected });
         return affected;
@@ -131,9 +182,11 @@ export class ToonDatabase extends IDatabase {
   async select<T = any>(table: string, where: Record<string, any> | null = null): Promise<T[]> {
     return this._execute('select', table, async () => {
       await this.initPromise;
+      // ✅ _getTable kullanarak array garantisi
+      const tableData = this._getTable(table);
       const results = where && Object.keys(where).length > 0
-        ? (this.db[table] || []).filter(row => Object.keys(where).every(k => String(row[k]) === String(where[k])))
-        : (this.db[table] || []);
+        ? tableData.filter(row => Object.keys(where).every(k => String(row[k]) === String(where[k])))
+        : tableData;
       return JSON.parse(JSON.stringify(results)) as T[];
     });
   }
@@ -144,6 +197,7 @@ export class ToonDatabase extends IDatabase {
   }
 
   async set(table: string, data: Record<string, any>, where: Record<string, any>): Promise<any> {
+    await this.ensureTable(table); // ✅ Önce tabloyu garantile
     const ex = await this.selectOne(table, where);
     return ex ? this.update(table, data, where) : this.insert(table, { ...where, ...data });
   }
@@ -153,8 +207,12 @@ export class ToonDatabase extends IDatabase {
       if (!dataArray.length) return 0;
       await this.ensureTable(table);
       return this._queueRequest(() => {
-        let maxId = this.db[table].reduce((max, row) => (row._id > max ? row._id : max), 0);
-        dataArray.forEach(data => { maxId++; this.db[table].push({ _id: maxId, ...data }); });
+        const tableData = this._getTable(table);
+        let maxId = tableData.reduce((max, row) => (row._id > max ? row._id : max), 0);
+        dataArray.forEach(data => {
+          maxId++;
+          this.db[table].push({ _id: maxId, ...data });
+        });
         return dataArray.length;
       });
     });
@@ -165,7 +223,8 @@ export class ToonDatabase extends IDatabase {
       await this.ensureTable(table);
       return this._queueRequest(() => {
         let affected = 0;
-        this.db[table].forEach(row => {
+        const tableData = this._getTable(table);
+        tableData.forEach(row => {
           if (Object.keys(where).every(k => String(row[k]) === String(where[k]))) {
             for (const [f, v] of Object.entries(incs)) row[f] = (Number(row[f]) || 0) + v;
             affected++;

@@ -5,39 +5,69 @@ import { RedisConfig } from './types';
 export class RedisDatabase extends IDatabase {
   private config: RedisConfig;
   private client: RedisClientType | null = null;
-  private isConnecting: boolean = false;
   private keyPrefix: string;
+  private _queue: Array<{ operation: () => Promise<any>; resolve: (val: any) => void; reject: (err: any) => void }> = [];
+  private _isReady: boolean = false;
+  private _connectionPromise: Promise<void> | null = null;
 
   constructor(config: RedisConfig) {
     super();
     this.config = config;
     this.keyPrefix = config.keyPrefix || 'app:';
+    this._ensureConnection();
+  }
+
+  private async _ensureConnection() {
+    if (this._connectionPromise) return this._connectionPromise;
+    this._connectionPromise = (async () => {
+      try {
+        this.client = createClient({
+            url: this.config.url,
+            socket: { 
+                host: this.config.host || '127.0.0.1', 
+                port: this.config.port || 6379,
+                connectTimeout: 5000,
+                reconnectStrategy: false 
+            },
+            password: this.config.password,
+            database: Number(this.config.database) || 0,
+        }) as RedisClientType;
+
+        await this.client.connect();
+        this._isReady = true;
+        this._flushQueue();
+      } catch (error) {
+        this._flushQueueWithError(error);
+      }
+    })();
+    return this._connectionPromise;
+  }
+
+  private _flushQueue() {
+    while (this._queue.length > 0) {
+      const item = this._queue.shift();
+      if (item) item.operation().then(item.resolve).catch(item.reject);
+    }
+  }
+
+  private _flushQueueWithError(error: any) {
+    while (this._queue.length > 0) {
+      const item = this._queue.shift();
+      if (item) item.reject(error);
+    }
   }
 
   private async _execute<T>(op: string, table: string, fn: () => Promise<T>): Promise<T> {
-    const start = Date.now();
-    const res = await fn();
-    this.recordMetric(op, table, Date.now() - start);
-    return res;
-  };
-
-  async connect(): Promise<RedisClientType> {
-    if (this.client && this.client.isReady) return this.client;
-    if (this.isConnecting) {
-      while (this.isConnecting) await new Promise(r => setTimeout(r, 100));
-      return this.client!;
-    }
-    this.isConnecting = true;
-    try {
-      this.client = createClient({
-        url: this.config.url,
-        socket: { host: this.config.host || '127.0.0.1', port: this.config.port || 6379 },
-        password: this.config.password,
-        database: Number(this.config.database) || 0,
-      }) as RedisClientType;
-      await this.client.connect();
-      return this.client;
-    } finally { this.isConnecting = false; }
+    const operation = async () => {
+        const start = Date.now();
+        const res = await fn();
+        this.recordMetric(op, table, Date.now() - start);
+        return res;
+    };
+    if (this._isReady) return operation();
+    return new Promise((resolve, reject) => {
+      this._queue.push({ operation, resolve, reject });
+    });
   }
 
   private _getKey(table: string, id: string): string { return `${this.keyPrefix}${table}:${id}`; }
@@ -45,10 +75,9 @@ export class RedisDatabase extends IDatabase {
 
   async select<T = any>(table: string, where: Record<string, any> = {}): Promise<T[]> {
     return this._execute('select', table, async () => {
-      const client = await this.connect();
-      const keys = await client.keys(this._getTableKey(table));
+      const keys = await this.client!.keys(this._getTableKey(table));
       if (!keys.length) return [];
-      const vals = await client.mGet(keys);
+      const vals = await this.client!.mGet(keys);
       return vals.map(v => v ? JSON.parse(v) : null).filter(Boolean)
         .filter(item => Object.entries(where).every(([k, v]) => String(item[k]) === String(v))) as T[];
     });
@@ -62,11 +91,10 @@ export class RedisDatabase extends IDatabase {
   async insert(table: string, data: Record<string, any>): Promise<any> {
     await this.runHooks('beforeInsert', table, data);
     return this._execute('insert', table, async () => {
-      const client = await this.connect();
       const d = { ...data };
       if (!d._id && !d.id) d._id = Date.now().toString() + Math.random().toString(36).slice(2, 9);
       const id = String(d._id || d.id);
-      await client.set(this._getKey(table, id), JSON.stringify(d));
+      await this.client!.set(this._getKey(table, id), JSON.stringify(d));
       await this.runHooks('afterInsert', table, d);
       return d._id || d.id;
     });
@@ -76,10 +104,9 @@ export class RedisDatabase extends IDatabase {
     await this.runHooks('beforeUpdate', table, { data, where });
     return this._execute('update', table, async () => {
       const existing = await this.select(table, where);
-      const client = await this.connect();
       for (const item of existing) {
         const merged = { ...item, ...data };
-        await client.set(this._getKey(table, item._id || item.id), JSON.stringify(merged));
+        await this.client!.set(this._getKey(table, item._id || item.id), JSON.stringify(merged));
       }
       return existing.length;
     });
@@ -89,10 +116,9 @@ export class RedisDatabase extends IDatabase {
     await this.runHooks('beforeDelete', table, where);
     return this._execute('delete', table, async () => {
       const existing = await this.select(table, where);
-      const client = await this.connect();
       if (existing.length) {
         const keys = existing.map(i => this._getKey(table, String(i._id || i.id)));
-        await client.del(keys);
+        await this.client!.del(keys);
       }
       return existing.length;
     });
@@ -108,13 +134,34 @@ export class RedisDatabase extends IDatabase {
     return dataArray.length;
   }
 
+  /**
+   * Atomic Increment using Lua for Redis
+   */
   async increment(table: string, incs: Record<string, number>, where: Record<string, any> = {}): Promise<number> {
     return this._execute('increment', table, async () => {
       const recs = await this.select(table, where);
-      const client = await this.connect();
       for (const r of recs) {
-        for (const [f, v] of Object.entries(incs)) r[f] = (Number(r[f]) || 0) + v;
-        await client.set(this._getKey(table, r._id || r.id), JSON.stringify(r));
+        const id = String(r._id || r.id);
+        const key = this._getKey(table, id);
+        
+        // Redis'te JSON sakladığımız için her alanı ayrı artırmak yerine 
+        // objeyi okuyup, güncelleyip tekrar yazmalıyız. 
+        // Bunu Lua script ile Redis tarafında atomik yapalım.
+        const lua = `
+            local val = redis.call('get', KEYS[1])
+            if not val then return 0 end
+            local data = cjson.decode(val)
+            local incs = cjson.decode(ARGV[1])
+            for k, v in pairs(incs) do
+                data[k] = (tonumber(data[k]) or 0) + v
+            end
+            redis.call('set', KEYS[1], cjson.encode(data))
+            return 1
+        `;
+        await this.client!.eval(lua, {
+            keys: [key],
+            arguments: [JSON.stringify(incs)]
+        });
       }
       return recs.length;
     });
@@ -126,7 +173,14 @@ export class RedisDatabase extends IDatabase {
     return this.increment(table, incs, where);
   }
 
-  async close(): Promise<void> { if (this.client) { await this.client.quit(); this.client = null; } }
+  async close(): Promise<void> { 
+      if (this.client) { 
+          await this.client.quit(); 
+          this.client = null; 
+          this._isReady = false; 
+          this._connectionPromise = null;
+      } 
+  }
 }
 
 export default RedisDatabase;

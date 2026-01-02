@@ -6,21 +6,54 @@ import { SQLiteConfig } from './types';
 
 export class SQLiteDatabase extends IDatabase {
   private db: sqlite3.Database;
+  private _queue: Array<{ operation: () => Promise<any>; resolve: (val: any) => void; reject: (err: any) => void }> = [];
+  private _isOpen: boolean = false;
 
   constructor(config: SQLiteConfig) {
     super();
     if (!config || !config.path) throw new Error('SQLite "path" gereklidir.');
     const dir = path.dirname(config.path);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    this.db = new sqlite3.Database(config.path);
+    
+    // SQLite open is technically async but the object is returned immediately.
+    // However, we simulate a queue to serialize operations strictly.
+    this.db = new sqlite3.Database(config.path, (err) => {
+      if (err) {
+        this._flushQueueWithError(err);
+      } else {
+        this._isOpen = true;
+        this._flushQueue();
+      }
+    });
+  }
+
+  private _flushQueue() {
+    while (this._queue.length > 0) {
+      const item = this._queue.shift();
+      if (item) item.operation().then(item.resolve).catch(item.reject);
+    }
+  }
+
+  private _flushQueueWithError(error: any) {
+    while (this._queue.length > 0) {
+      const item = this._queue.shift();
+      if (item) item.reject(error);
+    }
   }
 
   private async _execute<T>(op: string, table: string, fn: () => Promise<T>): Promise<T> {
-    const start = Date.now();
-    const res = await fn();
-    this.recordMetric(op, table, Date.now() - start);
-    return res;
-  };
+    const operation = async () => {
+        const start = Date.now();
+        const res = await fn();
+        this.recordMetric(op, table, Date.now() - start);
+        return res;
+    };
+
+    if (this._isOpen) return operation();
+    return new Promise((resolve, reject) => {
+      this._queue.push({ operation, resolve, reject });
+    });
+  }
 
   async query(sql: string, params: any[] = []): Promise<any> {
     return new Promise((resolve, reject) => {
@@ -110,8 +143,22 @@ export class SQLiteDatabase extends IDatabase {
 
   async bulkInsert(table: string, dataArray: any[]): Promise<number> {
     if (!dataArray.length) return 0;
-    for (const d of dataArray) await this.insert(table, d);
-    return dataArray.length;
+    return this._execute('bulkInsert', table, async () => {
+      await this.ensureTable(table, dataArray[0]);
+      await this.query('BEGIN TRANSACTION');
+      try {
+        const keys = Object.keys(dataArray[0]);
+        const sql = `INSERT INTO "${table}" (${keys.map(k => `"${k}"`).join(',')}) VALUES (${keys.map(() => '?').join(',')})`;
+        for (const d of dataArray) {
+          await this.query(sql, Object.values(d).map(v => typeof v === 'object' ? JSON.stringify(v) : v));
+        }
+        await this.query('COMMIT');
+        return dataArray.length;
+      } catch (error) {
+        await this.query('ROLLBACK');
+        throw error;
+      }
+    });
   }
 
   async increment(table: string, incs: any, where: any): Promise<number> {
@@ -131,7 +178,14 @@ export class SQLiteDatabase extends IDatabase {
     return this.increment(table, incs, where);
   }
 
-  async close(): Promise<void> { return new Promise((resolve, reject) => this.db.close(err => err ? reject(err) : resolve())); }
+  async close(): Promise<void> { 
+      return new Promise((resolve, reject) => {
+          this.db.close(err => {
+             this._isOpen = false;
+             err ? reject(err) : resolve()
+          }); 
+      }); 
+  }
 
   private _serializeValue(v: any): any {
     if (v instanceof Date) return v.toISOString().slice(0, 19).replace('T', ' ');

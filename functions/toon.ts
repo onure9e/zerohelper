@@ -10,7 +10,7 @@ export function stringify(data: any, indent: number = 0): string {
   if (typeof data === 'boolean' || typeof data === 'number') return String(data);
   
   if (typeof data === 'string') {
-    const hasSpecial = new RegExp('[\,\n:]').test(data);
+    const hasSpecial = new RegExp('[\,\n: ]').test(data);
     if (hasSpecial) return '"' + data.replace(/"/g, '\\"') + '"';
     return data;
   }
@@ -33,7 +33,7 @@ export function stringify(data: any, indent: number = 0): string {
             const val = item[k];
             if (val === null) return 'null';
             const valStr = String(val);
-            const hasSpecialRow = new RegExp('[\,\n:]').test(valStr);
+            const hasSpecialRow = new RegExp('[\,\n: ]').test(valStr);
             return (typeof val === 'string' && hasSpecialRow) ? '"' + valStr + '"' : valStr;
           }).join(',');
           return space + '  ' + rowValues;
@@ -57,49 +57,82 @@ export function stringify(data: any, indent: number = 0): string {
   return '';
 }
 
+/**
+ * Advanced TOON Parser with Indentation Support for Deep Nesting
+ */
 export function parse(toonStr: string): any {
   if (!toonStr || toonStr.trim() === '') return {};
-  const lines = toonStr.split('\n').filter(l => l.trim() !== '');
-  const result: any = {};
-  let i = 0;
-  while (i < lines.length) {
-    const line = lines[i].trim();
-    const tabularMatch = line.match(/^(\w+)\[(\d+)\]\{(.*)\}:$/);
-    if (tabularMatch) {
-      const tableName = tabularMatch[1];
-      const rowCount = parseInt(tabularMatch[2]);
-      const fields = tabularMatch[3].split(',');
-      const rows = [];
-      for (let j = 0; j < rowCount; j++) {
+  const lines = toonStr.split('\n').filter(l => l.trim() !== '' || l.startsWith(' '));
+  
+  function parseValue(val: string): any {
+    const trimmed = val.trim().replace(/^"|"$/g, '');
+    if (trimmed === 'true') return true;
+    if (trimmed === 'false') return false;
+    if (trimmed === 'null') return null;
+    if (trimmed === '[]') return [];
+    if (trimmed === '{}') return {};
+    if (!isNaN(Number(trimmed)) && trimmed !== '') return Number(trimmed);
+    return trimmed;
+  }
+
+  function getIndent(line: string): number {
+    const match = line.match(/^(\s*)/);
+    return match ? match[1].length : 0;
+  }
+
+  function processLines(startIndex: number, currentIndent: number): [any, number] {
+    const result: any = {};
+    let i = startIndex;
+
+    while (i < lines.length) {
+      const line = lines[i];
+      const indent = getIndent(line);
+      const content = line.trim();
+
+      if (content === '') { i++; continue; }
+      if (indent < currentIndent) break;
+
+      // Tabular Array Match: key[count]{fields}:
+      const tabularMatch = content.match(/^(\w+)\[(\d+)\]\{(.*)\}:$/);
+      if (tabularMatch) {
+        const key = tabularMatch[1];
+        const rowCount = parseInt(tabularMatch[2]);
+        const fields = tabularMatch[3].split(',');
+        const rows = [];
+        for (let j = 0; j < rowCount; j++) {
+          i++;
+          if (!lines[i]) break;
+          const values = lines[i].trim().split(',').map(v => parseValue(v));
+          const row: any = {};
+          fields.forEach((f, idx) => row[f] = values[idx]);
+          rows.push(row);
+        }
+        result[key] = rows;
         i++;
-        if (!lines[i]) break;
-        const values = lines[i].trim().split(',').map(v => {
-            const trimmed = v.trim();
-            if (trimmed === 'true') return true;
-            if (trimmed === 'false') return false;
-            if (trimmed === 'null') return null;
-            if (!isNaN(Number(trimmed)) && trimmed !== '') return Number(trimmed);
-            return trimmed.replace(/^"|"$/g, '');
-        });
-        const row: any = {};
-        fields.forEach((f, idx) => row[f] = values[idx]);
-        rows.push(row);
+        continue;
       }
-      result[tableName] = rows;
-    } else {
-      const kvMatch = line.match(/^(\w+):\s*(.*)$/);
+
+      // Standard Key-Value or Nested Object: key: value
+      const kvMatch = content.match(/^(\w+):(.*)$/);
       if (kvMatch) {
         const key = kvMatch[1];
-        const value = kvMatch[2];
-        let parsedVal: any = value.trim();
-        if (parsedVal === 'true') parsedVal = true;
-        else if (parsedVal === 'false') parsedVal = false;
-        else if (parsedVal === 'null') parsedVal = null;
-        else if (!isNaN(Number(parsedVal)) && parsedVal !== '') parsedVal = Number(parsedVal);
-        result[key] = parsedVal;
+        const valuePart = kvMatch[2].trim();
+
+        if (valuePart === '' && i + 1 < lines.length && getIndent(lines[i+1]) > indent) {
+          // It's a nested object
+          const [nestedObj, nextIndex] = processLines(i + 1, getIndent(lines[i+1]));
+          result[key] = nestedObj;
+          i = nextIndex;
+          continue;
+        } else {
+          result[key] = parseValue(valuePart);
+        }
       }
+      i++;
     }
-    i++;
+    return [result, i];
   }
-  return result;
+
+  const [finalResult] = processLines(0, 0);
+  return finalResult;
 }

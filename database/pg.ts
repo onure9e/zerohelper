@@ -21,7 +21,11 @@ export class PostgreSQLDatabase extends IDatabase {
         this._connected = true;
         resolve(this.pool);
         this._processQueue();
-      } catch (error) { reject(error); }
+      } catch (error) {
+        this._queue.forEach(q => q.reject(error));
+        this._queue = [];
+        reject(error);
+      }
     });
   }
 
@@ -49,14 +53,14 @@ export class PostgreSQLDatabase extends IDatabase {
   async ensureTable(table: string, data: any = {}): Promise<void> {
     const tables = await this.query(`SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name = $1`, [table]);
     if (tables.length === 0) {
-      const defs = Object.keys(data).map(k => `"${k}" TEXT`);
+      const defs = Object.keys(data).map(k => `"${k}" ${this._getColumnType(data[k])}`);
       await this.query(`CREATE TABLE "${table}" ("_id" SERIAL PRIMARY KEY ${defs.length ? ', ' + defs.join(",") : ''})`);
     } else {
       const existing = await this.query(`SELECT column_name FROM information_schema.columns WHERE table_name = $1 AND table_schema = 'public'`, [table]);
       const names = existing.map((c: any) => c.column_name);
       for (const key of Object.keys(data)) {
         if (key !== '_id' && !names.includes(key)) {
-          await this.query(`ALTER TABLE "${table}" ADD COLUMN "${key}" TEXT`);
+          await this.query(`ALTER TABLE "${table}" ADD COLUMN "${key}" ${this._getColumnType(data[key])}`);
         }
       }
     }
@@ -79,8 +83,9 @@ export class PostgreSQLDatabase extends IDatabase {
     await this.runHooks('beforeUpdate', table, { data, where });
     return this._execute('update', table, async () => {
       await this.ensureTable(table, { ...data, ...where });
-      const set = Object.keys(data).map((k, i) => `"${k}" = $${i + 1}`).join(",");
-      const { whereClause, values: whereValues } = this._buildWhereClause(where);
+      const dataKeys = Object.keys(data);
+      const set = dataKeys.map((k, i) => `"${k}" = $${i + 1}`).join(",");
+      const { whereClause, values: whereValues } = this._buildWhereClause(where, dataKeys.length);
       const sql = `UPDATE "${table}" SET ${set} ${whereClause}`;
       const pool = await this._connectionPromise;
       const res = await pool.query(sql, [...Object.values(data).map(v => this._serializeValue(v)), ...whereValues]);
@@ -107,7 +112,13 @@ export class PostgreSQLDatabase extends IDatabase {
       const rows = await this.query(`SELECT * FROM "${table}" ${whereClause}`, values);
       return rows.map((r: any) => {
         const nr: any = {};
-        for (const k in r) nr[k] = r[k];
+        for (const k in r) {
+          // Postgres returns numbers as strings for safety sometimes,
+          // but since we used correct types now, driver might handle it better.
+          // If not, we can cast if it looks like a number.
+          // For now, let's trust the driver + schema.
+          nr[k] = r[k];
+        }
         return nr as T;
       });
     });
@@ -132,8 +143,9 @@ export class PostgreSQLDatabase extends IDatabase {
   async increment(table: string, incs: Record<string, number>, where: any): Promise<number> {
     return this._execute('increment', table, async () => {
       await this.ensureTable(table, where);
-      const set = Object.keys(incs).map((f, i) => `"${f}" = "${f}" + $${i + 1}`).join(',');
-      const { whereClause, values } = this._buildWhereClause(where);
+      const incKeys = Object.keys(incs);
+      const set = incKeys.map((f, i) => `"${f}" = "${f}" + $${i + 1}`).join(',');
+      const { whereClause, values } = this._buildWhereClause(where, incKeys.length);
       const sql = `UPDATE "${table}" SET ${set} ${whereClause}`;
       const pool = await this._connectionPromise;
       const res = await pool.query(sql, [...Object.values(incs), ...values]);
@@ -163,13 +175,13 @@ export class PostgreSQLDatabase extends IDatabase {
     return (typeof v === 'object' && v !== null) ? JSON.stringify(v) : v;
   }
 
-  private _buildWhereClause(where: Record<string, any> | null): { whereClause: string; values: any[] } {
+  private _buildWhereClause(where: Record<string, any> | null, offset: number = 0): { whereClause: string; values: any[] } {
     if (!where) return { whereClause: '', values: [] };
     const safeWhere = where as Record<string, any>;
     const keys = Object.keys(safeWhere);
     if (!keys.length) return { whereClause: '', values: [] };
     return {
-      whereClause: 'WHERE ' + keys.map((k, i) => `"${k}" = $${i + 1}`).join(' AND '),
+      whereClause: 'WHERE ' + keys.map((k, i) => `"${k}" = $${i + 1 + offset}`).join(' AND '),
       values: keys.map(k => this._serializeValue(safeWhere[k]))
     };
   }

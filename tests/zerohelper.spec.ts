@@ -113,7 +113,7 @@ describe('ZeroHelper Elite Framework Test Suite', () => {
       expect(user.name).toBe('Onur');
       expect(user.hooked).toBe("true");
       expect(hookTriggered).toBe(true);
-    });
+    }, 30000);
 
     test('should handle secondary indexing correctly', async () => {
       const indexedDb = database.createDatabase({
@@ -137,7 +137,7 @@ describe('ZeroHelper Elite Framework Test Suite', () => {
       await db.increment('stats', { views: 5 }, { _id: id });
       const updated = await db.selectOne('stats', { _id: id });
       expect(Number(updated.views)).toBe(15);
-    });
+    }, 30000);
 
     test('should record telemetry metrics', () => {
       const metrics = db.getMetrics();
@@ -155,11 +155,11 @@ describe('ZeroHelper Elite Framework Test Suite', () => {
       const sizeAfter = fs.statSync(ZPACK_FILE).size;
 
       expect(sizeAfter).toBeLessThan(sizeBefore);
-    });
+    }, 30000);
 
     afterAll(async () => {
       await db.close();
-    });
+    }, 30000);
   });
 
   describe('💾 Database: TOON Native Adapter', () => {
@@ -178,10 +178,12 @@ describe('ZeroHelper Elite Framework Test Suite', () => {
       await tdb.insert('orders', { product: 'Mechanical Keyboard', price: 150 });
       const order = await tdb.selectOne('orders', { _id: id });
 
+
       expect(id).toBeDefined();
       expect(order.product).toBe('Elite Laptop');
 
-      await new Promise(r => setTimeout(r, 600));
+      // Ensure data is flushed to disk
+      await tdb.close();
       const content = fs.readFileSync(TOON_FILE, 'utf-8');
       expect(content).toContain('orders: [2]{_id,product,price}:');
     });

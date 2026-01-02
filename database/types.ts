@@ -9,6 +9,7 @@ export interface NetworkConfig extends BaseConfig {
   password?: string;
   database?: string;
   url?: string;
+  uri?: string;
   poolSize?: number;
 }
 

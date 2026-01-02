@@ -4,7 +4,7 @@ export type HookType = 'beforeInsert' | 'afterInsert' | 'beforeUpdate' | 'afterU
 export type HookFunction = (table: string, data: any) => Promise<void> | void;
 
 /**
- * Tüm veritabanı adaptörlerinin uyması gereken ortak arayüzü tanımlar.
+ * Defines the common interface that all database adapters must implement.
  */
 export abstract class IDatabase {
   protected hooks: Record<HookType, HookFunction[]> = {
@@ -17,7 +17,7 @@ export abstract class IDatabase {
   };
 
   /**
-   * Bir lifecycle hook kaydeder.
+   * Registers a lifecycle hook.
    */
   public on(hook: HookType, fn: HookFunction): void {
     if (this.hooks[hook]) {
@@ -48,52 +48,52 @@ export abstract class IDatabase {
   }
 
   /**
-   * Belirtilen koşullara göre birden çok kayıt seçer.
+   * Selects multiple records based on the specified conditions.
    */
   abstract select<T = any>(table: string, where?: Record<string, any> | null): Promise<T[]>;
 
   /**
-   * Belirtilen koşullara göre tek bir kayıt seçer.
+   * Selects a single record based on the specified conditions.
    */
   abstract selectOne<T = any>(table: string, where?: Record<string, any> | null): Promise<T | null>;
 
   /**
-   * Yeni bir kayıt ekler.
+   * Inserts a new record.
    */
   abstract insert(table: string, data: Record<string, any>): Promise<number | string | any>;
 
   /**
-   * Belirtilen koşullara uyan kayıtları günceller.
+   * Updates records matching the specified conditions.
    */
   abstract update(table: string, data: Record<string, any>, where: Record<string, any>): Promise<number>;
 
   /**
-   * Bir kaydı günceller veya yoksa yeni bir kayıt olarak ekler (Upsert).
+   * Updates a record or inserts it as a new record if it doesn't exist (Upsert).
    */
   abstract set(table: string, data: Record<string, any>, where: Record<string, any>): Promise<any>;
 
   /**
-   * Belirtilen koşullara uyan kayıtları siler.
+   * Deletes records matching the specified conditions.
    */
   abstract delete(table: string, where: Record<string, any>): Promise<number>;
 
   /**
-   * Birden çok kaydı toplu olarak ekler.
+   * Inserts multiple records in bulk.
    */
   abstract bulkInsert(table: string, dataArray: Record<string, any>[]): Promise<number>;
 
   /**
-   * Numerik alanları artırır (increment).
+   * Increments numeric fields.
    */
   abstract increment(table: string, increments: Record<string, number>, where: Record<string, any>): Promise<number>;
 
   /**
-   * Numerik alanları azaltır (decrement).
+   * Decrements numeric fields.
    */
   abstract decrement(table: string, decrements: Record<string, number>, where: Record<string, any>): Promise<number>;
 
   /**
-   * Veritabanı bağlantısını güvenli bir şekilde sonlandırır.
+   * Safely closes the database connection.
    */
   abstract close(): Promise<void>;
 }

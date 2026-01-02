@@ -60,5 +60,5 @@ export function createDatabase(options: DatabaseOptions): IDatabase {
   return dbInstance as IDatabase;
 }
 
-export { MigrationManager, ZPackDatabase, ZPackAdapter, DataSeeder, ToonDatabase };
+export { IDatabase, MigrationManager, ZPackDatabase, ZPackAdapter, DataSeeder, ToonDatabase };
 export default createDatabase;
