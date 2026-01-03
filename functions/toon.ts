@@ -8,7 +8,7 @@ export function stringify(data: any, indent: number = 0): string {
   const space = ' '.repeat(indent);
   if (data === null) return 'null';
   if (typeof data === 'boolean' || typeof data === 'number') return String(data);
-  
+
   if (typeof data === 'string') {
     const hasSpecial = new RegExp('[\,\n: ]').test(data);
     if (hasSpecial) return '"' + data.replace(/"/g, '\\"') + '"';
@@ -20,8 +20,8 @@ export function stringify(data: any, indent: number = 0): string {
     const first = data[0];
     if (typeof first === 'object' && first !== null && !Array.isArray(first)) {
       const keys = Object.keys(first);
-      const isUniform = data.every(item => 
-        item && typeof item === 'object' && 
+      const isUniform = data.every(item =>
+        item && typeof item === 'object' &&
         Object.keys(item).length === keys.length &&
         Object.keys(item).every(k => keys.includes(k))
       );
@@ -63,9 +63,15 @@ export function stringify(data: any, indent: number = 0): string {
 export function parse(toonStr: string): any {
   if (!toonStr || toonStr.trim() === '') return {};
   const lines = toonStr.split('\n').filter(l => l.trim() !== '' || l.startsWith(' '));
-  
+
   function parseValue(val: string): any {
-    const trimmed = val.trim().replace(/^"|"$/g, '');
+    const trimmed = val.trim();
+
+    // Tırnak içindeki string
+    if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
+      return trimmed.slice(1, -1).replace(/\\"/g, '"');
+    }
+
     if (trimmed === 'true') return true;
     if (trimmed === 'false') return false;
     if (trimmed === 'null') return null;
@@ -92,45 +98,94 @@ export function parse(toonStr: string): any {
       if (content === '') { i++; continue; }
       if (indent < currentIndent) break;
 
-      // Tabular Array Match: key[count]{fields}:
-      const tabularMatch = content.match(/^(\w+)\[(\d+)\]\{(.*)\}:$/);
-      if (tabularMatch) {
-        const key = tabularMatch[1];
-        const rowCount = parseInt(tabularMatch[2]);
-        const fields = tabularMatch[3].split(',');
-        const rows = [];
-        for (let j = 0; j < rowCount; j++) {
-          i++;
-          if (!lines[i]) break;
-          const values = lines[i].trim().split(',').map(v => parseValue(v));
-          const row: any = {};
-          fields.forEach((f, idx) => row[f] = values[idx]);
-          rows.push(row);
-        }
-        result[key] = rows;
-        i++;
-        continue;
-      }
-
-      // Standard Key-Value or Nested Object: key: value
-      const kvMatch = content.match(/^(\w+):(.*)$/);
+      // ✅ FIX: Standard Key-Value match FIRST
+      const kvMatch = content.match(/^(\w+):\s*(.*)$/);
       if (kvMatch) {
         const key = kvMatch[1];
         const valuePart = kvMatch[2].trim();
 
-        if (valuePart === '' && i + 1 < lines.length && getIndent(lines[i+1]) > indent) {
-          // It's a nested object
-          const [nestedObj, nextIndex] = processLines(i + 1, getIndent(lines[i+1]));
+        // ✅ FIX: Check if valuePart is a tabular array header
+        // Format: [count]{field1,field2,...}:
+        const tabularMatch = valuePart.match(/^\[(\d+)\]\{(.*)\}:$/);
+        if (tabularMatch) {
+          const rowCount = parseInt(tabularMatch[1]);
+          const fields = tabularMatch[2].split(',').map(f => f.trim());
+          const rows: any[] = [];
+
+          for (let j = 0; j < rowCount; j++) {
+            i++;
+            if (i >= lines.length) break;
+
+            const rowLine = lines[i].trim();
+            if (!rowLine) { j--; continue; } // Boş satır atla
+
+            // ✅ FIX: CSV parsing with quote support
+            const values = parseCSVRow(rowLine);
+            const row: any = {};
+            fields.forEach((f, idx) => {
+              row[f] = idx < values.length ? parseValue(values[idx]) : null;
+            });
+            rows.push(row);
+          }
+
+          result[key] = rows;
+          i++;
+          continue;
+        }
+
+        // ✅ Inline array: [count]: value1,value2,...
+        const inlineArrayMatch = valuePart.match(/^\[(\d+)\]:\s*(.*)$/);
+        if (inlineArrayMatch) {
+          const values = parseCSVRow(inlineArrayMatch[2]);
+          result[key] = values.map(v => parseValue(v));
+          i++;
+          continue;
+        }
+
+        // Nested object check
+        if (valuePart === '' && i + 1 < lines.length && getIndent(lines[i + 1]) > indent) {
+          const [nestedObj, nextIndex] = processLines(i + 1, getIndent(lines[i + 1]));
           result[key] = nestedObj;
           i = nextIndex;
           continue;
-        } else {
-          result[key] = parseValue(valuePart);
         }
+
+        // Simple value
+        result[key] = parseValue(valuePart);
+        i++;
+        continue;
       }
+
       i++;
     }
     return [result, i];
+  }
+
+  // ✅ CSV row parser with quote support
+  function parseCSVRow(row: string): string[] {
+    const result: string[] = [];
+    let current = '';
+    let inQuotes = false;
+
+    for (let i = 0; i < row.length; i++) {
+      const char = row[i];
+
+      if (char === '"' && (i === 0 || row[i - 1] !== '\\')) {
+        inQuotes = !inQuotes;
+        current += char;
+      } else if (char === ',' && !inQuotes) {
+        result.push(current.trim());
+        current = '';
+      } else {
+        current += char;
+      }
+    }
+
+    if (current) {
+      result.push(current.trim());
+    }
+
+    return result;
   }
 
   const [finalResult] = processLines(0, 0);

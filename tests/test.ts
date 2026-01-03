@@ -17,9 +17,13 @@ const run = async () => {
   })
 
 
-  await db.set('testTable', { userName: 'Onur Ege', age: 21 }, { userName: 'Onur Ege' })
+  await db.insert('testTable', { userName: 'Onur Ege', age: 21 })
+  await db.insert('testTable', { userName: 'Onur Ege', age: 21 })
+  await db.insert('testTable', { userName: 'Onur Ege', age: 21 })
+  await db.insert('users', { userName: 'Onur Ege' })
+  await db.insert('users', { userName: 'Onur Ege' })
 
-  console.log(await db.selectOne('testTable', { age: 21 }))
+  console.log(await db.select('testTable', { age: 21 }))
 }
 
 run()
