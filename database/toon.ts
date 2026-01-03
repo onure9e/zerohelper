@@ -43,12 +43,10 @@ export class ToonDatabase extends IDatabase {
       const content = await fs.readFile(this.filePath, 'utf-8');
       const parsed = parse(content);
 
-      // ✅ Parse sonucunu doğrula
       if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
         this.db = {};
       } else {
         this.db = {};
-        // Her tablonun array olduğundan emin ol
         for (const [key, value] of Object.entries(parsed)) {
           this.db[key] = Array.isArray(value) ? value : [];
         }
@@ -60,7 +58,6 @@ export class ToonDatabase extends IDatabase {
   }
 
   private _getTable(table: string): any[] {
-    // ✅ Her zaman array döndüren yardımcı fonksiyon
     const data = this.db[table];
     return Array.isArray(data) ? data : [];
   }
@@ -119,7 +116,6 @@ export class ToonDatabase extends IDatabase {
 
   async ensureTable(table: string): Promise<void> {
     await this.initPromise;
-    // ✅ Tablonun array olduğundan emin ol
     if (!Array.isArray(this.db[table])) {
       return this._queueRequest(() => {
         this.db[table] = [];
@@ -182,7 +178,6 @@ export class ToonDatabase extends IDatabase {
   async select<T = any>(table: string, where: Record<string, any> | null = null): Promise<T[]> {
     return this._execute('select', table, async () => {
       await this.initPromise;
-      // ✅ _getTable kullanarak array garantisi
       const tableData = this._getTable(table);
       const results = where && Object.keys(where).length > 0
         ? tableData.filter(row => Object.keys(where).every(k => String(row[k]) === String(where[k])))
@@ -197,9 +192,17 @@ export class ToonDatabase extends IDatabase {
   }
 
   async set(table: string, data: Record<string, any>, where: Record<string, any>): Promise<any> {
-    await this.ensureTable(table); // ✅ Önce tabloyu garantile
+    await this.initPromise;
+    await this.ensureTable(table);
     const ex = await this.selectOne(table, where);
-    return ex ? this.update(table, data, where) : this.insert(table, { ...where, ...data });
+    if (ex) {
+      // Kayıt varsa güncelle
+      await this.update(table, data, where);
+      return ex._id;
+    } else {
+      // Kayıt yoksa ekle
+      return this.insert(table, { ...where, ...data });
+    }
   }
 
   async bulkInsert(table: string, dataArray: Record<string, any>[]): Promise<number> {

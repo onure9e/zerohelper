@@ -10,7 +10,7 @@ export function stringify(data: any, indent: number = 0): string {
   if (typeof data === 'boolean' || typeof data === 'number') return String(data);
 
   if (typeof data === 'string') {
-    const hasSpecial = new RegExp('[\,\n: ]').test(data);
+    const hasSpecial = /[,\n: ]/.test(data);
     if (hasSpecial) return '"' + data.replace(/"/g, '\\"') + '"';
     return data;
   }
@@ -18,6 +18,8 @@ export function stringify(data: any, indent: number = 0): string {
   if (Array.isArray(data)) {
     if (data.length === 0) return '[]';
     const first = data[0];
+
+    // ✅ FIX: Object array'leri için HER ZAMAN tabular format kullan (1+ eleman için)
     if (typeof first === 'object' && first !== null && !Array.isArray(first)) {
       const keys = Object.keys(first);
       const isUniform = data.every(item =>
@@ -26,21 +28,26 @@ export function stringify(data: any, indent: number = 0): string {
         Object.keys(item).every(k => keys.includes(k))
       );
 
-      if (isUniform && data.length > 1) {
+      if (isUniform) {
         const header = '[' + data.length + ']{' + keys.join(',') + '}:';
         const rows = data.map(item => {
           const rowValues = keys.map(k => {
             const val = item[k];
             if (val === null) return 'null';
+            if (Array.isArray(val)) {
+              return '"' + JSON.stringify(val) + '"';
+            }
             const valStr = String(val);
-            const hasSpecialRow = new RegExp('[\,\n: ]').test(valStr);
-            return (typeof val === 'string' && hasSpecialRow) ? '"' + valStr + '"' : valStr;
+            const hasSpecialRow = /[,\n: ]/.test(valStr);
+            return (typeof val === 'string' && hasSpecialRow) ? '"' + valStr.replace(/"/g, '\\"') + '"' : valStr;
           }).join(',');
           return space + '  ' + rowValues;
         });
         return header + '\n' + rows.join('\n');
       }
     }
+
+    // Non-object array'ler için inline format
     return '[' + data.length + ']: ' + data.map(v => stringify(v)).join(',');
   }
 
@@ -62,14 +69,23 @@ export function stringify(data: any, indent: number = 0): string {
  */
 export function parse(toonStr: string): any {
   if (!toonStr || toonStr.trim() === '') return {};
-  const lines = toonStr.split('\n').filter(l => l.trim() !== '' || l.startsWith(' '));
+  const lines = toonStr.split('\n');
 
   function parseValue(val: string): any {
     const trimmed = val.trim();
 
     // Tırnak içindeki string
     if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
-      return trimmed.slice(1, -1).replace(/\\"/g, '"');
+      const unquoted = trimmed.slice(1, -1).replace(/\\"/g, '"');
+      // JSON array string'i kontrol et
+      try {
+        if (unquoted.startsWith('[') && unquoted.endsWith(']')) {
+          return JSON.parse(unquoted);
+        }
+      } catch (e) {
+        // JSON değilse normal string döndür
+      }
+      return unquoted;
     }
 
     if (trimmed === 'true') return true;
@@ -86,6 +102,33 @@ export function parse(toonStr: string): any {
     return match ? match[1].length : 0;
   }
 
+  // CSV row parser with proper quote handling
+  function parseCSVRow(row: string): string[] {
+    const result: string[] = [];
+    let current = '';
+    let inQuotes = false;
+
+    for (let i = 0; i < row.length; i++) {
+      const char = row[i];
+
+      if (char === '"' && (i === 0 || row[i - 1] !== '\\')) {
+        inQuotes = !inQuotes;
+        current += char;
+      } else if (char === ',' && !inQuotes) {
+        result.push(current.trim());
+        current = '';
+      } else {
+        current += char;
+      }
+    }
+
+    if (current.trim()) {
+      result.push(current.trim());
+    }
+
+    return result;
+  }
+
   function processLines(startIndex: number, currentIndent: number): [any, number] {
     const result: any = {};
     let i = startIndex;
@@ -95,48 +138,71 @@ export function parse(toonStr: string): any {
       const indent = getIndent(line);
       const content = line.trim();
 
-      if (content === '') { i++; continue; }
+      // Boş satırları atla
+      if (content === '') {
+        i++;
+        continue;
+      }
+
       if (indent < currentIndent) break;
 
-      // ✅ FIX: Standard Key-Value match FIRST
-      const kvMatch = content.match(/^(\w+):\s*(.*)$/);
+      // Standard Key-Value match
+      const kvMatch = content.match(/^([^:]+):\s*(.*)$/);
       if (kvMatch) {
-        const key = kvMatch[1];
+        const key = kvMatch[1].trim();
         const valuePart = kvMatch[2].trim();
 
-        // ✅ FIX: Check if valuePart is a tabular array header
-        // Format: [count]{field1,field2,...}:
-        const tabularMatch = valuePart.match(/^\[(\d+)\]\{(.*)\}:$/);
+        // ✅ FIX: Tabular array header - Format: [count]{field1,field2,...}:
+        const tabularMatch = valuePart.match(/^\[(\d+)\]\{([^}]+)\}:$/);
         if (tabularMatch) {
-          const rowCount = parseInt(tabularMatch[1]);
+          const expectedRowCount = parseInt(tabularMatch[1]);
           const fields = tabularMatch[2].split(',').map(f => f.trim());
           const rows: any[] = [];
 
-          for (let j = 0; j < rowCount; j++) {
-            i++;
-            if (i >= lines.length) break;
+          let rowsRead = 0;
+          i++; // Header'dan sonraki satıra geç
 
-            const rowLine = lines[i].trim();
-            if (!rowLine) { j--; continue; } // Boş satır atla
+          while (i < lines.length && rowsRead < expectedRowCount) {
+            const rowLine = lines[i];
+            const rowIndent = getIndent(rowLine);
+            const rowContent = rowLine.trim();
 
-            // ✅ FIX: CSV parsing with quote support
-            const values = parseCSVRow(rowLine);
+            // Boş satırları atla
+            if (rowContent === '') {
+              i++;
+              continue;
+            }
+
+            // Indent kontrolü - child satır olmalı
+            if (rowIndent <= currentIndent) {
+              break;
+            }
+
+            // CSV parsing with quote support
+            const values = parseCSVRow(rowContent);
             const row: any = {};
+
             fields.forEach((f, idx) => {
               row[f] = idx < values.length ? parseValue(values[idx]) : null;
             });
+
             rows.push(row);
+            rowsRead++;
+            i++;
           }
 
           result[key] = rows;
-          i++;
           continue;
         }
 
-        // ✅ Inline array: [count]: value1,value2,...
-        const inlineArrayMatch = valuePart.match(/^\[(\d+)\]:\s*(.*)$/);
+        // ✅ FIX: Inline array - [count]: value1,value2,...
+        const inlineArrayMatch = valuePart.match(/^\[(\d+)\]:\s*(.+)$/);
         if (inlineArrayMatch) {
-          const values = parseCSVRow(inlineArrayMatch[2]);
+          const count = parseInt(inlineArrayMatch[1]);
+          const valueStr = inlineArrayMatch[2].trim();
+
+          // Normal değer array'i (virgülle ayrılmış basit değerler)
+          const values = parseCSVRow(valueStr);
           result[key] = values.map(v => parseValue(v));
           i++;
           continue;
@@ -159,33 +225,6 @@ export function parse(toonStr: string): any {
       i++;
     }
     return [result, i];
-  }
-
-  // ✅ CSV row parser with quote support
-  function parseCSVRow(row: string): string[] {
-    const result: string[] = [];
-    let current = '';
-    let inQuotes = false;
-
-    for (let i = 0; i < row.length; i++) {
-      const char = row[i];
-
-      if (char === '"' && (i === 0 || row[i - 1] !== '\\')) {
-        inQuotes = !inQuotes;
-        current += char;
-      } else if (char === ',' && !inQuotes) {
-        result.push(current.trim());
-        current = '';
-      } else {
-        current += char;
-      }
-    }
-
-    if (current) {
-      result.push(current.trim());
-    }
-
-    return result;
   }
 
   const [finalResult] = processLines(0, 0);
