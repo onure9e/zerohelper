@@ -1,0 +1,70 @@
+{
+  "test_backup": [
+    {
+      "_id": 1,
+      "field_1": 656,
+      "field_2": "r5XNqVUN",
+      "field_3": 601
+    },
+    {
+      "_id": 2,
+      "field_1": 862,
+      "field_2": "kNnCclVW",
+      "field_3": 704
+    },
+    {
+      "_id": 3,
+      "field_1": 359,
+      "field_2": "mwu5QYYh",
+      "field_3": 27
+    },
+    {
+      "_id": 4,
+      "field_1": 806,
+      "field_2": "Qzco0sWq",
+      "field_3": 138
+    },
+    {
+      "_id": 5,
+      "field_1": 25,
+      "field_2": "spS20XAo",
+      "field_3": 594
+    },
+    {
+      "_id": 6,
+      "field_1": 748,
+      "field_2": "AWMWK6CR",
+      "field_3": 366
+    },
+    {
+      "_id": 7,
+      "field_1": 847,
+      "field_2": "BCitGRTV",
+      "field_3": 242
+    },
+    {
+      "_id": 8,
+      "field_1": 174,
+      "field_2": "RtNhbR35",
+      "field_3": 549
+    },
+    {
+      "_id": 9,
+      "field_1": 48,
+      "field_2": "46m7sv2Z",
+      "field_3": 732
+    },
+    {
+      "_id": 10,
+      "field_1": 347,
+      "field_2": "NVgQnbJ4",
+      "field_3": 522
+    }
+  ],
+  "_cache_clear": [
+    {
+      "_id": 1,
+      "timestamp": 1767534448138
+    }
+  ]
+}

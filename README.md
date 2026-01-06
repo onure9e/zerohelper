@@ -4,7 +4,7 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-Ready-blue?style=for-the-badge&logo=typescript)](https://www.typescriptlang.org/)
 [![License](https://img.shields.io/badge/License-ISC-green?style=for-the-badge)](https://opensource.org/licenses/ISC)
 
-**ZeroHelper** is an elite-level, high-performance, and fully TypeScript-native utility ecosystem. Rebuilt from the ground up for version 9.1.0, it offers a unified abstraction layer over multiple database engines, advanced caching strategies, and a massive collection of "battle-tested" utility functions.
+**ZeroHelper** is an elite-level, high-performance, and fully TypeScript-native utility ecosystem. Rebuilt from the ground up for version 10.2.6, it offers a unified abstraction layer over multiple database engines, advanced caching strategies, and a massive collection of "battle-tested" utility functions.
 
 ---
 
@@ -38,6 +38,12 @@ We have now decided to open the vault. By open-sourcing this battle-hardened fra
 7. [Database Migration System](#-database-migration-system)
 8. [ZeroWorker (Worker Threads)](#-zeroworker-worker-threads)
 9. [Zero-CLI Management Tool](#-zero-cli)
+    - [Project Initialization](#project-initialization)
+    - [Database Management](#database-management)
+    - [Migration Management](#migration-management)
+    - [Cache Management](#cache-management)
+    - [Data Export/Import](#data-exportimport)
+    - [Interactive REPL](#interactive-repl)
 10. [Data Seeder](#-data-seeder)
 11. [Function Modules in Depth](#-function-modules-in-depth)
     - [TOON Module](#toon-module)
@@ -48,10 +54,12 @@ We have now decided to open the vault. By open-sourcing this battle-hardened fra
 12. [Validation & Sanitization Engine](#-validation--sanitization-engine)
 13. [Professional Logger Pro](#-professional-logger-pro)
 14. [HTTP & Networking](#-http--networking)
-15. [Architecture & Performance Benchmarks](#-architecture--performance)
-16. [Best Practices](#-best-practices)
-17. [Troubleshooting](#-troubleshooting)
-18. [License](#-license)
+15. [Real-World Use Cases](#-real-world-use-cases)
+16. [Frequently Asked Questions](#-frequently-asked-questions)
+17. [Architecture & Performance Benchmarks](#-architecture--performance)
+18. [Best Practices](#-best-practices)
+19. [Troubleshooting](#-troubleshooting)
+20. [License](#-license)
 
 ---
 
@@ -65,18 +73,17 @@ npm install @onurege3467/zerohelper
 
 ## 🛡️ TypeScript Excellence
 
-ZeroHelper 9.1.0 leverages **Discriminated Unions** to ensure that your configuration object perfectly matches your selected adapter. This eliminates the "configuration guesswork" that plagues most multi-database libraries.
+ZeroHelper 10.2.6 leverages **Discriminated Unions** to ensure that your configuration object perfectly matches your selected adapter. This eliminates the "configuration guesswork" that plagues most multi-database libraries.
 
 ### Example: Config Autocomplete
 ```typescript
 import { database } from '@onurege3467/zerohelper';
 
-// Type-Safe Factory
 const db = database.createDatabase({
   adapter: 'zpack',
   config: {
     path: './data.zpack',
-    indexFields: { 'users': ['email'] }, // Intelligent autocomplete for ZPack
+    indexFields: { 'users': ['email'] },
     autoFlush: true
   }
 });
@@ -92,14 +99,12 @@ All adapters implement the `IDatabase` interface, allowing you to swap database 
 
 #### 1. Inserting Data
 ```typescript
-// Simple insert
 const newId = await db.insert('users', {
   username: 'onurege',
   email: 'contact@onurege.com',
   created_at: new Date()
 });
 
-// Bulk insert (Highly optimized)
 const count = await db.bulkInsert('logs', [
   { message: 'System Start', level: 'info' },
   { message: 'Database Connected', level: 'info' }
@@ -108,19 +113,19 @@ const count = await db.bulkInsert('logs', [
 
 #### 2. Advanced Selection
 ```typescript
-// Fetch a single record with generic types
 interface User { _id: number; username: string; email: string; }
 const user = await db.selectOne<User>('users', { username: 'onurege' });
 ```
 
 #### 3. Atomic Counters
-Avoid race conditions by using atomic operations instead of manual fetching and saving.
 ```typescript
-// Safely incrementing balance
 await db.increment('wallets', { balance: 100 }, { user_id: 1 });
-
-// Safely decrementing stock
 await db.decrement('inventory', { stock: 1 }, { sku: 'PRO-123' });
+```
+
+#### 4. Upsert Operations
+```typescript
+await db.set('settings', { value: 'dark' }, { key: 'theme' });
 ```
 
 ---
@@ -128,40 +133,101 @@ await db.decrement('inventory', { stock: 1 }, { sku: 'PRO-123' });
 ## 🚀 Specialized Database Adapters
 
 ### 🏎️ ZPack (The Binary Powerhouse)
-**ZPack** is ZeroHelper's proprietary binary format designed for high-throughput logging and data archival.
-- **Vacuum:** `await db.vacuum()` - Rebuilds the file to eliminate fragmented space from deleted records.
-- **Indexing:** Instant lookups on non-ID fields using secondary indexing.
-- **Compression:** Built-in `zlib` compression for minimal disk footprint.
 
+ZPack is ZeroHelper's proprietary binary format engineered for **maximum write performance** and **minimum storage footprint**.
+
+#### Key Features
+- **Ultra-Fast Writes**: 0.08ms average write latency
+- **zlib Compression**: 40-60% smaller file sizes
+- **Vacuum Operation**: Eliminate fragmentation from deleted records
+- **Secondary Indexing**: Instant lookups on indexed fields
+- **Auto-Flush**: Configurable write-through behavior
+
+#### When to Use ZPack
+- High-volume event logging
+- Audit trail storage
+- Data archival and backup
+- Time-series data (with vacuum maintenance)
+
+#### Example
 ```typescript
 const zpack = database.createDatabase({
   adapter: 'zpack',
-  config: { path: './storage/engine.zpack', autoFlush: true }
+  config: {
+    path: './storage/events.zpack',
+    indexFields: { 'events': ['event_type', 'user_id'] },
+    autoFlush: true
+  }
 });
+
+await zpack.insert('logs', { timestamp: new Date(), level: 'info', message: 'Event' });
+
+await zpack.vacuum();
 ```
 
-### 📊 TOON (Token-Oriented Object Notation DB)
-The **world's first native TOON database**. It stores data in a YAML-like compact format optimized for LLMs and human readability.
+### 📊 TOON (World's First Native TOON Database)
 
-#### Why TOON Native Storage?
-- **Token Efficiency:** Saves **30-60% tokens** when your AI agents read your data files.
-- **Readable Alternative:** As fast as binary but as readable as YAML.
+ZeroHelper introduces the **world's first native TOON (Token-Oriented Object Notation) database** - a revolutionary format optimized for both humans and AI.
 
+#### Why TOON?
+
+| Feature | JSON | YAML | TOON |
+|---------|------|------|------|
+| Human Readable | ⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ |
+| Parse Speed | ⭐⭐⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐⭐⭐ |
+| Token Efficiency | ⭐⭐ | ⭐⭐⭐ | ⭐⭐⭐⭐⭐ |
+| AI-Optimized | ❌ | ❌ | ⭐⭐⭐⭐⭐ |
+| File Size | Medium | Large | Small |
+
+#### TOON Syntax Example
+```toon
+users:
+  name: John
+  age: 25
+  active: true
+
+products:
+  [3]{name,price,stock}:
+    Laptop,1500,10
+    Mouse,25,100
+    Keyboard,75,50
+```
+
+#### LLM Token Savings
+```
+JSON:  {"users":[{"name":"John","age":25,"active":true}]} = 47 tokens
+TOON:  users: name: John age: 25 active: true         = 12 tokens
+
+Savings: ~75% reduction in token usage!
+```
+
+#### Use Cases
+- AI/LLM application data storage
+- Configuration files
+- Prompt engineering templates
+- Agent memory and context
+
+#### Example
 ```typescript
 const toonDb = database.createDatabase({
   adapter: 'toon',
   config: {
-    path: './data.toon',
-    saveInterval: 1000 // Debounced disk write for high performance
+    path: './ai-data.toon',
+    saveInterval: 1000
   }
 });
 
-await toonDb.insert('orders', { item: 'Laptop', price: 1500 });
+await toonDb.insert('prompts', { system: 'You are helpful...', temperature: 0.7 });
 ```
 
 ### 🐘 PostgreSQL & 🐬 MySQL
+
 Enterprise-grade SQL adapters with automatic schema evolution.
-- **Auto-Table/Column Creation:** ZeroHelper creates missing tables and performs `ALTER TABLE` automatically when new keys are detected in your data.
+- **Auto-Table/Column Creation**: ZeroHelper creates missing tables and performs `ALTER TABLE` automatically when new keys are detected in your data.
+
+### 🍃 MongoDB & 💚 Redis
+
+Flexible NoSQL adapters for document storage and caching.
 
 ---
 
@@ -177,7 +243,7 @@ const db = database.createDatabase({
     cache: {
       type: 'redis',
       host: '127.0.0.1',
-      ttl: 300000 // 5 minutes
+      ttl: 300000
     }
   }
 });
@@ -195,7 +261,7 @@ db.on('beforeInsert', (table, data) => {
 });
 
 db.on('afterUpdate', (table, result) => {
-  logger.info(`Table ${table} updated. Rows affected: ${result.affected}`);
+  console.log(`Table ${table} updated. Rows affected: ${result.affected}`);
 });
 ```
 
@@ -239,26 +305,77 @@ const result = await functions.worker_module.runAsyncTask(
 
 ## 🛠️ Zero-CLI
 
-A professional command-line interface to manage your framework.
+A professional command-line interface to manage your database and ZeroHelper framework.
+
+### 📋 Available Commands
+
+#### **Project Initialization**
 ```bash
-# Initialize project interactively
 npx zero init
-
-# Maintenance: Compact binary files
-npx zero zpack:vacuum ./data.zpack
-
-# View real-time DB dashboard
-npx zero db:stats
-
-# Create migration templates
-npx zero make:migration add_user_roles
 ```
+
+#### **Database Management**
+```bash
+npx zero db:test
+npx zero db:stats
+npx zero db:seed --table users --count 100
+npx zero db:backup
+npx zero db:backup --output ./custom-backups
+npx zero db:restore ./backups/backup_2024-01-01.zerohelper.json
+```
+
+#### **Migration Management**
+```bash
+npx zero migrate
+npx zero migration:rollback --steps 1
+npx zero migration:status
+npx zero make:migration create_users_table
+```
+
+#### **Cache Management**
+```bash
+npx zero cache:clear
+npx zero cache:stats
+```
+
+#### **Data Export/Import**
+```bash
+npx zero db:export --table users --format json
+npx zero db:export --table users --format csv --output ./exports/users.csv
+npx zero db:import ./exports/users.csv --table users --format csv
+npx zero db:import ./exports/users.json --table users --format json
+```
+
+#### **ZPack Maintenance**
+```bash
+npx zero zpack:vacuum ./data.zpack
+```
+
+#### **Interactive REPL**
+```bash
+npx zero repl
+```
+**Available REPL commands:**
+- `.exit` - Exit REPL
+- `.help` - Show available commands
+- `.stats` - Show database stats
+- `.metrics` - Show performance metrics
+- `.clear` - Clear screen
+- `select <table>` - Select all from table
+- `count <table>` - Count records in table
+
+#### **Global Options**
+- `-c, --config <path>` - Path to config file (default: `zero.config.ts`)
+- `-h, --help` - Show help for command
+- `-V, --version` - Output version number
 
 ---
 
 ## 📥 Data Seeder
 
 Populate your database with realistic mock data in seconds.
+
+### Programmatic Usage
 ```typescript
 const seeder = new database.DataSeeder(db);
 await seeder.seed('users', 100, {
@@ -267,6 +384,20 @@ await seeder.seed('users', 100, {
   isActive: { type: 'boolean' }
 });
 ```
+
+### CLI Usage
+```bash
+npx zero db:seed --table users --count 100
+```
+
+### Supported Field Types
+- `string` - Random string with configurable length
+- `number` - Random number within min/max range
+- `email` - Random email address with various domains
+- `boolean` - Random true/false value
+- `date` - Random date within the last decade
+- `id` - Unique ID string
+- `pick` - Random value from provided array
 
 ---
 
@@ -284,38 +415,164 @@ const obj = functions.toon_module.parse(str);
 ### 🔢 Math & Statistics (`math_module`)
 ```typescript
 const data = [10, 2, 38, 23, 21];
-functions.math_module.mean(data);               // 18.8
-functions.math_module.standardDeviation(data);   // 12.4
-functions.math_module.isPrime(13);               // true
+functions.math_module.mean(data);
+functions.math_module.standardDeviation(data);
+functions.math_module.isPrime(13);
 ```
 
 ### 🔤 String & Slug Module (`string_module`)
 ```typescript
-functions.string_module.generateSlug("ZeroHelper: The Best!"); // "zerohelper-the-best"
-functions.string_module.titleCase("hello world"); // "Hello World"
+functions.string_module.generateSlug("ZeroHelper: The Best!");
+functions.string_module.titleCase("hello world");
 ```
 
 ### 🎲 Random Module (`random_module`)
 ```typescript
-functions.random_module.makeUniqueId(); // "kx9z2m1..."
-functions.random_module.randomHex();    // "#F3A2B1"
-functions.random_module.randomEmoji();  // "🚀"
+functions.random_module.makeUniqueId();
+functions.random_module.randomHex();
+functions.random_module.randomEmoji();
+```
+
+### 🌐 HTTP Module (`http_module`)
+```typescript
+const data = await functions.http_module.fetchData('https://api.example.com/data');
+const response = await functions.http_module.postData('https://api.example.com/post', { key: 'value' });
+```
+
+### 📅 Date Module (`date_module`)
+```typescript
+functions.date_module.formatDate(new Date(), 'YYYY-MM-DD');
+functions.date_module.addDays(new Date(), 5);
+functions.date_module.dateDifference(date1, date2);
+```
+
+### 🛠️ Array Module (`array_module`)
+```typescript
+functions.array_module.shuffleArray([1, 2, 3, 4, 5]);
+functions.array_module.groupBy(users, 'role');
+functions.array_module.pluck(users, 'email');
+functions.array_module.sortBy(users, 'name');
+```
+
+### 🔧 Object Module (`object_module`)
+```typescript
+functions.object_module.deepMerge(obj1, obj2);
+functions.object_module.filterObjectByKey(obj, ['name', 'email']);
 ```
 
 ---
 
 ## 🔐 Security & Cryptography
-- **Rate Limiter:** `functions.security_module.checkRateLimit(key, options)`
-- **Password Safety:** BCrypt hashing and verification.
-- **Encryption:** AES-256 secure text encryption.
-- **JWT:** Professional token management.
+
+### Password Handling
+```typescript
+const hash = functions.crypto_module.hashPassword('securePassword123');
+const isValid = functions.crypto_module.verifyPassword('securePassword123', hash);
+```
+
+### Text Encryption (AES-256-CBC)
+```typescript
+const { encryptedText, iv } = functions.crypto_module.encryptText('secret', 'mySecretKey');
+const original = functions.crypto_module.decryptText(encryptedText, 'mySecretKey', iv);
+```
+
+### JWT Tokens
+```typescript
+const token = functions.crypto_module.generateJWT({ userId: 1 }, 'jwtSecret');
+const payload = functions.crypto_module.verifyJWT(token, 'jwtSecret');
+```
+
+### Rate Limiting
+
+#### Memory-based (Single Instance)
+```typescript
+const result = await functions.security_module.checkRateLimit('user:1', {
+  limit: 10,
+  window: 60,
+  storage: 'memory'
+});
+console.log(result.allowed); // true or false
+```
+
+#### Redis-based (Distributed Systems)
+```typescript
+const result = await functions.security_module.checkRateLimit('api:192.168.1.1', {
+  limit: 100,
+  window: 60,
+  storage: 'redis',
+  redisClient: redisDb
+});
+```
+
+### Additional Security Functions
+```typescript
+functions.crypto_module.isPasswordStrong('MySecureP@ss123');
+functions.crypto_module.validateUUID('550e8400-e29b-41d4-a716-446655440000');
+functions.crypto_module.generateSalt();
+```
 
 ---
 
 ## 🛡️ Validation & Sanitization Engine
-- **Schema Validation:** Declarative data structure checking.
-- **HTML Sanitization:** Robust XSS protection.
-- **Luhn Algorithm:** Credit card number validation.
+
+### Schema Validation
+```typescript
+const schema = {
+  email: { required: true, type: 'string', pattern: /^[^\s@]+@[^\s@]+\.[^\s@]+$/ },
+  age: { required: false, type: 'number', min: 18, max: 120 },
+  password: { required: true, type: 'string', minLength: 8 }
+};
+
+const result = functions.validation_module.validateSchema(data, schema);
+console.log(result.isValid);
+console.log(result.errors);
+```
+
+### Input Sanitization
+```typescript
+const clean = functions.validation_module.sanitizeInput(userInput, {
+  trim: true,
+  removeHTML: true,
+  escape: true
+});
+```
+
+### Utilities
+```typescript
+functions.validation_module.isEmail('test@example.com');
+functions.validation_module.isPhone('+1234567890');
+functions.validation_module.isURL('https://example.com');
+functions.validation_module.sanitizeHTML('<script>alert("xss")</script>');
+functions.validation_module.validateCreditCard('4111111111111111');
+```
+
+---
+
+## 📝 Professional Logger Pro
+
+```typescript
+import { functions } from '@onurege3467/zerohelper';
+
+const logger = functions.logger_module.createLogger({
+  level: 'info',
+  enableColors: true,
+  enableTimestamp: true,
+  logFile: './app.log'
+});
+
+logger.info('User logged in', { userId: 123 });
+logger.warn('Rate limit approaching', { remaining: 10 });
+logger.error('Database connection failed', { error: err.message });
+logger.debug('Cache hit', { key: 'user:123' });
+```
+
+### Quick Logging Functions
+```typescript
+functions.logger_module.info('Message');
+functions.logger_module.warn('Message');
+functions.logger_module.error('Message');
+functions.logger_module.debug('Message');
+```
 
 ---
 
@@ -324,6 +581,127 @@ functions.random_module.randomEmoji();  // "🚀"
 - **ZPack Binary Write:** 0.08ms
 - **TOON Serialization:** 0.15ms / 1KB
 - **Array Grouping (1M items):** 45ms
+
+---
+
+## 🎯 Real-World Use Cases
+
+### E-Commerce Application
+```typescript
+const db = database.createDatabase({
+  adapter: 'postgres',
+  config: {
+    host: 'localhost',
+    user: 'admin',
+    password: 'secure',
+    database: 'shop',
+    cache: { type: 'redis', host: '127.0.0.1', ttl: 300000 }
+  }
+});
+
+await db.insert('products', { name: 'Laptop', price: 1500, stock: 10 });
+await db.decrement('products', { stock: 1 }, { sku: 'PROD-001' });
+await db.increment('orders', { total: 1500 }, { orderId: 1001 });
+
+const hash = functions.crypto_module.hashPassword(userPassword);
+await db.insert('users', { email, password: hash });
+```
+
+### AI/LLM Applications with TOON
+```typescript
+const toonDb = database.createDatabase({
+  adapter: 'toon',
+  config: { path: './ai-data.toon' }
+});
+
+await toonDb.insert('prompts', {
+  system: 'You are a helpful assistant designed for customer support.',
+  examples: [...],
+  temperature: 0.7,
+  maxTokens: 1000
+});
+
+const prompts = toonDb.select('prompts', { category: 'support' });
+```
+
+### High-Performance Logging with ZPack
+```typescript
+const zpack = database.createDatabase({
+  adapter: 'zpack',
+  config: { path: './logs.zpack', autoFlush: true }
+});
+
+await zpack.insert('events', {
+  timestamp: new Date(),
+  level: 'info',
+  message: 'User action recorded',
+  userId: 123,
+  action: 'purchase',
+  amount: 99.99
+});
+
+await zpack.vacuum();
+```
+
+### Distributed API Protection
+```typescript
+import { database } from '@onurege3467/zerohelper';
+
+const redisDb = database.createDatabase({
+  adapter: 'redis',
+  config: { host: '127.0.0.1', port: 6379 }
+});
+
+async function handleApiRequest(ip: string) {
+  const rateLimit = await functions.security_module.checkRateLimit(`api:${ip}`, {
+    limit: 1000,
+    window: 3600,
+    storage: 'redis',
+    redisClient: redisDb
+  });
+
+  if (!rateLimit.allowed) {
+    throw new Error('Rate limit exceeded');
+  }
+
+  return processRequest();
+}
+```
+
+---
+
+## ❓ Frequently Asked Questions
+
+### Q: Which adapter should I choose?
+
+**A:**
+- **ZPack**: High-volume logging, archival, audit trails
+- **TOON**: AI/LLM applications, configs, human-readable needs
+- **JSON**: Development, small projects, prototyping
+- **SQLite**: Desktop apps, single-user applications
+- **PostgreSQL/MySQL**: Web applications, enterprise systems
+- **MongoDB**: Flexible document schemas, content management
+- **Redis**: Caching, sessions, real-time features
+
+### Q: How does TOON save tokens for LLMs?
+
+**A:** TOON uses compact syntax like `[3]{name,age}: John,25 Jane,30 Bob,28` instead of verbose JSON arrays. This reduces token count by 30-60% while maintaining full data fidelity and human readability.
+
+### Q: Is ZPack suitable for concurrent access?
+
+**A:** ZPack is optimized for single-writer scenarios. For multi-threaded logging, consider using SQLite or a dedicated logging service with ZPack for archival.
+
+### Q: Can I migrate between adapters?
+
+**A:** Yes! All adapters implement the IDatabase interface. Export data using `db:export` CLI command and import to any other adapter.
+
+### Q: What's the difference between memory and Redis rate limiting?
+
+**A:** Memory storage is fast and suitable for single-instance applications. Redis storage enables distributed rate limiting across multiple server instances.
+
+### Q: Does ZeroHelper support transactions?
+
+**A:** SQL adapters (PostgreSQL, MySQL, SQLite) support transactions. NoSQL and file-based adapters have atomic operations but not full ACID transactions.
 
 ---
 
