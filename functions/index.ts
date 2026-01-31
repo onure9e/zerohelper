@@ -7,6 +7,7 @@ import { URL } from "url";
 import * as security from './security';
 import * as worker from './worker';
 import * as toon from './toon';
+import * as ai from './ai';
 
 // Random İşlemler
 export function makeUniqueId(): string {
@@ -686,4 +687,8 @@ export const worker_module = {
 export const toon_module = {
   stringify: toon.stringify,
   parse: toon.parse
+};
+
+export const ai_module = {
+  ...ai
 };

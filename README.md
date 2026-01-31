@@ -50,6 +50,7 @@ We have now decided to open the vault. By open-sourcing this battle-hardened fra
     - [Math & Statistics](#math-module)
     - [String & Slug Module](#string-module)
     - [Array & Collection Module](#array-module)
+    - [AI Module](#ai-module)
     - [Security & Cryptography](#security-cryptography)
 12. [Validation & Sanitization Engine](#-validation--sanitization-engine)
 13. [Professional Logger Pro](#-professional-logger-pro)
@@ -458,6 +459,80 @@ functions.array_module.sortBy(users, 'name');
 ```typescript
 functions.object_module.deepMerge(obj1, obj2);
 functions.object_module.filterObjectByKey(obj, ['name', 'email']);
+```
+
+### 🤖 AI Module (`ai_module`)
+
+LLM/AI çalışmaları için yardımcı utility fonksiyonları. Token hesaplama, prompt yönetimi, maliyet tahmini ve context optimizasyonu.
+
+#### Token İşlemleri
+```typescript
+// Yaklaşık token sayısı hesaplama
+const tokens = functions.ai_module.estimateTokens("Hello world this is a test");
+
+// Metni token limitine göre kırpma
+const truncated = functions.ai_module.truncateToTokenLimit(longText, 1000);
+
+// Metni parçalara bölme
+const chunks = functions.ai_module.splitByTokenLimit(longText, 4000);
+```
+
+#### Prompt Yönetimi
+```typescript
+// Chat mesajı formatlama
+const message = functions.ai_module.formatChatMessage('user', 'Hello');
+
+// Few-shot prompt oluşturma
+const prompt = functions.ai_module.createFewShotPrompt([
+  { input: '2+2?', output: '4' },
+  { input: '3+3?', output: '6' }
+], '4+4?');
+
+// Sistem ve kullanıcı mesajlarını birleştirme
+const messages = functions.ai_module.mergeSystemAndUser(
+  'You are a helpful assistant',
+  'What is the weather?'
+);
+```
+
+#### Context & Conversation Yönetimi
+```typescript
+// Mesajları context penceresine sığdırma
+const fitted = functions.ai_module.fitMessagesToContext(messages, 8000);
+
+// Konuşma geçmişini sıkıştırma
+const compressed = functions.ai_module.compressConversationHistory(messages, 4);
+```
+
+#### Maliyet Hesaplama
+```typescript
+// Konuşma maliyetini tahmin etme
+const cost = functions.ai_module.estimateConversationCost(messages, 'gpt-4');
+console.log(cost.totalCost); // USD cinsinden toplam maliyet
+
+// Model bilgileri
+const limit = functions.ai_module.getModelTokenLimit('gpt-4o'); // 128000
+const pricing = functions.ai_module.getModelPricing('claude-3-sonnet');
+```
+
+#### Output İşlemleri
+```typescript
+// Markdown'dan JSON çıkarma
+const json = functions.ai_module.extractJSONFromMarkdown('```json\n{"key": "value"}\n```');
+
+// Streaming response parse etme
+const chunk = functions.ai_module.parseStreamingChunk('data: {"choices": [{"delta": {"content": "Hello"}}]}');
+```
+
+#### Utility Fonksiyonlar
+```typescript
+// Token limit kontrolü
+if (functions.ai_module.isTokenLimitExceeded(prompt, 4000)) {
+  // Prompt çok uzun
+}
+
+// Yüzdeye göre kısaltma
+const shorter = functions.ai_module.truncatePromptByPercentage(prompt, 50); // %50 kısalt
 ```
 
 ---
